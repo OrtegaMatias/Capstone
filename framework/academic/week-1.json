@@ -1,0 +1,71 @@
+{
+  "objective": "Caracterizar por separado los atributos operacionales de los flujos IN y OUT, y comparar visualmente su estructura para construir una narrativa EDA academica del problema.",
+  "analytical_goal": "descriptivo_explicativo",
+  "domain_context": "El dataset semanal del curso registra observaciones de entrada y salida del sistema de deposito. La meta de esta semana es entender la estructura de ambas fuentes, diagnosticar calidad, revisar distribuciones y dejar hipotesis trazables para modelado posterior.",
+  "unit_of_observation": "Cada fila representa una observacion operacional identificada por la llave tecnica y asociada a un evento IN o a un evento OUT del sistema.",
+  "target_variable": "DaysInDeposit",
+  "explanatory_variables": [
+    "Condition",
+    "Owner",
+    "Size",
+    "Type",
+    "Quality",
+    "week"
+  ],
+  "initial_hypotheses": [
+    "La calidad del contenedor se relaciona con diferencias en DaysInDeposit dentro del dataset OUT.",
+    "La composicion de propietarios, tamanos y tipos no es identica entre IN y OUT, por lo que la comparacion directa debe hacerse por distribuciones.",
+    "El dataset OUT puede contener segmentos operacionales distinguibles mediante clustering, mientras que el dataset IN puede capturar patrones de entrada con una estructura distinta."
+  ],
+  "variable_dictionary": [
+    {
+      "name": "Condition",
+      "logical_type": "categorica",
+      "business_description": "Condicion operacional observada al momento del ingreso.",
+      "analytical_role": "feature_in",
+      "notes": "Solo existe en IN y se usa para segmentacion descriptiva."
+    },
+    {
+      "name": "Owner",
+      "logical_type": "categorica",
+      "business_description": "Propietario o responsable operacional asociado al registro.",
+      "analytical_role": "feature_compartida",
+      "notes": "Puede comportarse como categoria de alta cardinalidad."
+    },
+    {
+      "name": "Size",
+      "logical_type": "categorica_discreta",
+      "business_description": "Clase discreta de tamano asociada a la observacion.",
+      "analytical_role": "feature_compartida",
+      "notes": "Se trata como clase y no como magnitud continua."
+    },
+    {
+      "name": "Type",
+      "logical_type": "categorica",
+      "business_description": "Tipo operacional del contenedor o unidad observada.",
+      "analytical_role": "feature_compartida",
+      "notes": "Variable clave para comparaciones entre grupos."
+    },
+    {
+      "name": "Quality",
+      "logical_type": "categorica",
+      "business_description": "Clasificacion de calidad asociada a la observacion.",
+      "analytical_role": "feature_compartida",
+      "notes": "Se espera que explique parte importante de la variacion del dataset OUT."
+    },
+    {
+      "name": "DaysInDeposit",
+      "logical_type": "numerica_objetivo",
+      "business_description": "Tiempo observado de permanencia en deposito para la salida registrada.",
+      "analytical_role": "target_out",
+      "notes": "Variable objetivo principal para descripcion y comparaciones cat-num en OUT."
+    },
+    {
+      "name": "week",
+      "logical_type": "numerica_discreta",
+      "business_description": "Marca temporal semanal del seed analizado.",
+      "analytical_role": "contexto_temporal",
+      "notes": "En Week 1 se espera constante y se reporta solo como contexto."
+    }
+  ]
+}

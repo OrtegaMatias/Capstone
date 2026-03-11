@@ -1,0 +1,209 @@
+{
+  "dataset_id": "9d74d69d-35c7-47a9-8cb1-a306ce9e489f",
+  "shape": [
+    4,
+    9
+  ],
+  "columns": [
+    "Unnamed: 0",
+    "Condition",
+    "Owner_in",
+    "Owner_out",
+    "DaysInDeposit",
+    "Size",
+    "Type",
+    "Quality",
+    "week"
+  ],
+  "dtypes": {
+    "Unnamed: 0": "object",
+    "Condition": "string",
+    "Owner_in": "string",
+    "Owner_out": "string",
+    "DaysInDeposit": "int64",
+    "Size": "int64",
+    "Type": "string",
+    "Quality": "string",
+    "week": "int64"
+  },
+  "has_target": true,
+  "schema": {
+    "in_file": [
+      "Unnamed: 0",
+      "Condition",
+      "Owner",
+      "Size",
+      "Type",
+      "Quality",
+      "week"
+    ],
+    "out_file": [
+      "Unnamed: 0",
+      "Owner",
+      "Size",
+      "Type",
+      "Quality",
+      "DaysInDeposit",
+      "week"
+    ],
+    "canonical": [
+      "Unnamed: 0",
+      "Condition",
+      "Owner_in",
+      "Owner_out",
+      "DaysInDeposit",
+      "Size",
+      "Type",
+      "Quality",
+      "week"
+    ]
+  },
+  "warnings": [
+    {
+      "code": "overlap_column_conflict",
+      "severity": "info",
+      "column": null,
+      "message": "Columns differ between in/out and were kept with suffixes _in/_out: Owner.",
+      "suggestion": "This is expected when IN/OUT represent different stages. Analyze *_in and *_out separately."
+    }
+  ],
+  "step_metadata": {
+    "step_read_csv": {
+      "in_file": {
+        "filename": "Grupo1_in.csv",
+        "encoding": "utf-8",
+        "separator": ",",
+        "rows": 4,
+        "cols": 7
+      },
+      "out_file": {
+        "filename": "Grupo1_out.csv",
+        "encoding": "utf-8",
+        "separator": ",",
+        "rows": 4,
+        "cols": 7
+      }
+    },
+    "step_clean_columns": {
+      "in_file": {
+        "source": "in_file",
+        "original_columns": [
+          "Unnamed: 0",
+          "Condition",
+          "Owner",
+          "Size",
+          "Type",
+          "Quality",
+          "week"
+        ],
+        "clean_columns": [
+          "Unnamed: 0",
+          "Condition",
+          "Owner",
+          "Size",
+          "Type",
+          "Quality",
+          "week"
+        ],
+        "dropped_empty_columns": []
+      },
+      "out_file": {
+        "source": "out_file",
+        "original_columns": [
+          "Unnamed: 0",
+          "Owner",
+          "Size",
+          "Type",
+          "Quality",
+          "DaysInDeposit",
+          "week"
+        ],
+        "clean_columns": [
+          "Unnamed: 0",
+          "Owner",
+          "Size",
+          "Type",
+          "Quality",
+          "DaysInDeposit",
+          "week"
+        ],
+        "dropped_empty_columns": []
+      }
+    },
+    "step_cast_types": {
+      "in_file": {
+        "source": "in_file",
+        "semantic_types": {
+          "Quality": "categorical",
+          "Owner": "categorical",
+          "Condition": "categorical",
+          "Type": "categorical",
+          "Size": "numeric",
+          "week": "numeric",
+          "Unnamed: 0": "categorical"
+        }
+      },
+      "out_file": {
+        "source": "out_file",
+        "semantic_types": {
+          "Quality": "categorical",
+          "Owner": "categorical",
+          "Type": "categorical",
+          "Size": "numeric",
+          "DaysInDeposit": "numeric_target",
+          "week": "numeric",
+          "Unnamed: 0": "categorical"
+        }
+      }
+    },
+    "step_merge": {
+      "mode": "merged",
+      "merge_key": "Unnamed: 0",
+      "input_in_rows": 4,
+      "input_out_rows": 4,
+      "merged_rows": 4,
+      "unmatched_in_rows": 0,
+      "unmatched_out_rows": 0
+    },
+    "step_missing": {
+      "missing_report": {
+        "Unnamed: 0": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Condition": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Owner_in": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Owner_out": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "DaysInDeposit": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Size": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Type": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Quality": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "week": {
+          "count": 0,
+          "pct": 0.0
+        }
+      }
+    }
+  }
+}

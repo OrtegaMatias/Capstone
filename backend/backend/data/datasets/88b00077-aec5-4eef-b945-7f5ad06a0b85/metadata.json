@@ -1,0 +1,134 @@
+{
+  "dataset_id": "88b00077-aec5-4eef-b945-7f5ad06a0b85",
+  "shape": [
+    1874,
+    7
+  ],
+  "columns": [
+    "Unnamed: 0",
+    "Condition",
+    "Owner",
+    "Size",
+    "Type",
+    "Quality",
+    "week"
+  ],
+  "dtypes": {
+    "Unnamed: 0": "object",
+    "Condition": "string",
+    "Owner": "string",
+    "Size": "int64",
+    "Type": "string",
+    "Quality": "string",
+    "week": "int64"
+  },
+  "has_target": false,
+  "schema": {
+    "in_file": [
+      "Unnamed: 0",
+      "Condition",
+      "Owner",
+      "Size",
+      "Type",
+      "Quality",
+      "week"
+    ],
+    "out_file": [],
+    "canonical": [
+      "Unnamed: 0",
+      "Condition",
+      "Owner",
+      "Size",
+      "Type",
+      "Quality",
+      "week"
+    ]
+  },
+  "warnings": [],
+  "step_metadata": {
+    "step_read_csv": {
+      "in_file": {
+        "filename": "Grupo1_in.csv",
+        "encoding": "utf-8",
+        "separator": ";",
+        "rows": 1874,
+        "cols": 7
+      }
+    },
+    "step_clean_columns": {
+      "in_file": {
+        "source": "in_file",
+        "original_columns": [
+          "Unnamed: 0",
+          "Condition",
+          "Owner",
+          "Size",
+          "Type",
+          "Quality",
+          "week"
+        ],
+        "clean_columns": [
+          "Unnamed: 0",
+          "Condition",
+          "Owner",
+          "Size",
+          "Type",
+          "Quality",
+          "week"
+        ],
+        "dropped_empty_columns": []
+      }
+    },
+    "step_cast_types": {
+      "in_file": {
+        "source": "in_file",
+        "semantic_types": {
+          "Quality": "categorical",
+          "Owner": "categorical",
+          "Type": "categorical",
+          "Condition": "categorical",
+          "Size": "numeric",
+          "week": "discrete_numeric",
+          "Unnamed: 0": "categorical"
+        }
+      }
+    },
+    "step_merge": {
+      "mode": "passthrough",
+      "rows": 1874,
+      "columns": 7
+    },
+    "step_missing": {
+      "missing_report": {
+        "Unnamed: 0": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Condition": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Owner": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Size": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Type": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Quality": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "week": {
+          "count": 0,
+          "pct": 0.0
+        }
+      }
+    }
+  }
+}

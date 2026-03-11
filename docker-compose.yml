@@ -1,0 +1,32 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/data:/app/backend/data
+      - ./seed:/app/seed
+      - ./framework:/app/framework
+      - ./workspace:/app/workspace
+    environment:
+      - DATASETS_DIR=/app/backend/data/datasets
+      - SEED_DIR=/app/seed
+      - WORKSPACE_DIR=/app/workspace
+      - FRAMEWORK_MANIFEST_PATH=/app/framework/manifest.json
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000/api/v1
+    depends_on:
+      - backend

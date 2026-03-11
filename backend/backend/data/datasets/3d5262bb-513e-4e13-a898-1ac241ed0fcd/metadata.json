@@ -1,0 +1,251 @@
+{
+  "dataset_id": "3d5262bb-513e-4e13-a898-1ac241ed0fcd",
+  "shape": [
+    1874,
+    12
+  ],
+  "columns": [
+    "Unnamed: 0",
+    "Condition",
+    "Owner_in",
+    "Size_in",
+    "Type_in",
+    "Quality_in",
+    "Owner_out",
+    "Size_out",
+    "Type_out",
+    "Quality_out",
+    "DaysInDeposit",
+    "week"
+  ],
+  "dtypes": {
+    "Unnamed: 0": "object",
+    "Condition": "string",
+    "Owner_in": "string",
+    "Size_in": "int64",
+    "Type_in": "string",
+    "Quality_in": "string",
+    "Owner_out": "string",
+    "Size_out": "int64",
+    "Type_out": "string",
+    "Quality_out": "string",
+    "DaysInDeposit": "int64",
+    "week": "int64"
+  },
+  "has_target": true,
+  "schema": {
+    "in_file": [
+      "Unnamed: 0",
+      "Condition",
+      "Owner",
+      "Size",
+      "Type",
+      "Quality",
+      "week"
+    ],
+    "out_file": [
+      "Unnamed: 0",
+      "Owner",
+      "Size",
+      "Type",
+      "Quality",
+      "DaysInDeposit",
+      "week"
+    ],
+    "canonical": [
+      "Unnamed: 0",
+      "Condition",
+      "Owner_in",
+      "Size_in",
+      "Type_in",
+      "Quality_in",
+      "Owner_out",
+      "Size_out",
+      "Type_out",
+      "Quality_out",
+      "DaysInDeposit",
+      "week"
+    ]
+  },
+  "warnings": [
+    {
+      "code": "overlap_column_conflict",
+      "severity": "warning",
+      "column": "Owner",
+      "message": "Column Owner differs between in/out files; keeping Owner_in and Owner_out.",
+      "suggestion": "Review source consistency before supervised conclusions."
+    },
+    {
+      "code": "overlap_column_conflict",
+      "severity": "warning",
+      "column": "Size",
+      "message": "Column Size differs between in/out files; keeping Size_in and Size_out.",
+      "suggestion": "Review source consistency before supervised conclusions."
+    },
+    {
+      "code": "overlap_column_conflict",
+      "severity": "warning",
+      "column": "Type",
+      "message": "Column Type differs between in/out files; keeping Type_in and Type_out.",
+      "suggestion": "Review source consistency before supervised conclusions."
+    },
+    {
+      "code": "overlap_column_conflict",
+      "severity": "warning",
+      "column": "Quality",
+      "message": "Column Quality differs between in/out files; keeping Quality_in and Quality_out.",
+      "suggestion": "Review source consistency before supervised conclusions."
+    }
+  ],
+  "step_metadata": {
+    "step_read_csv": {
+      "in_file": {
+        "filename": "Grupo1_in.csv",
+        "encoding": "utf-8",
+        "separator": ";",
+        "rows": 1874,
+        "cols": 7
+      },
+      "out_file": {
+        "filename": "Grupo1_out.csv",
+        "encoding": "utf-8",
+        "separator": ";",
+        "rows": 1904,
+        "cols": 7
+      }
+    },
+    "step_clean_columns": {
+      "in_file": {
+        "source": "in_file",
+        "original_columns": [
+          "Unnamed: 0",
+          "Condition",
+          "Owner",
+          "Size",
+          "Type",
+          "Quality",
+          "week"
+        ],
+        "clean_columns": [
+          "Unnamed: 0",
+          "Condition",
+          "Owner",
+          "Size",
+          "Type",
+          "Quality",
+          "week"
+        ],
+        "dropped_empty_columns": []
+      },
+      "out_file": {
+        "source": "out_file",
+        "original_columns": [
+          "Unnamed: 0",
+          "Owner",
+          "Size",
+          "Type",
+          "Quality",
+          "DaysInDeposit",
+          "week"
+        ],
+        "clean_columns": [
+          "Unnamed: 0",
+          "Owner",
+          "Size",
+          "Type",
+          "Quality",
+          "DaysInDeposit",
+          "week"
+        ],
+        "dropped_empty_columns": []
+      }
+    },
+    "step_cast_types": {
+      "in_file": {
+        "source": "in_file",
+        "semantic_types": {
+          "Owner": "categorical",
+          "Condition": "categorical",
+          "Type": "categorical",
+          "Quality": "categorical",
+          "Size": "numeric",
+          "week": "discrete_numeric",
+          "Unnamed: 0": "categorical"
+        }
+      },
+      "out_file": {
+        "source": "out_file",
+        "semantic_types": {
+          "Owner": "categorical",
+          "Type": "categorical",
+          "Quality": "categorical",
+          "Size": "numeric",
+          "DaysInDeposit": "numeric_target",
+          "week": "discrete_numeric",
+          "Unnamed: 0": "categorical"
+        }
+      }
+    },
+    "step_merge": {
+      "mode": "merged",
+      "merge_key": "Unnamed: 0",
+      "input_in_rows": 1874,
+      "input_out_rows": 1904,
+      "merged_rows": 1874,
+      "unmatched_in_rows": 0,
+      "unmatched_out_rows": 30
+    },
+    "step_missing": {
+      "missing_report": {
+        "Unnamed: 0": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Condition": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Owner_in": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Size_in": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Type_in": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Quality_in": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Owner_out": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Size_out": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Type_out": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "Quality_out": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "DaysInDeposit": {
+          "count": 0,
+          "pct": 0.0
+        },
+        "week": {
+          "count": 0,
+          "pct": 0.0
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,302 @@
+{
+  "framework_name": "Framework Semanal de Analitica y Decision Capstone",
+  "summary": "Framework repo-local para conducir el trabajo del ramo por semanas: EDA, ML, modelamiento matematico y optimizacion.",
+  "weeks": [
+    {
+      "week_id": "week-1",
+      "week_number": 1,
+      "title": "Semana 1",
+      "stage_name": "EDA",
+      "status": "active",
+      "summary": "Exploracion, calidad de datos y primeras hipotesis con el seed base del curso.",
+      "description": "La primera etapa consolida los archivos IN/OUT, valida el esquema, resume calidad de datos y deja hallazgos trazables para el portafolio academico.",
+      "academic_metadata_path": "framework/academic/week-1.json",
+      "seed_paths": {
+        "in_file": "seed/Week1/Grupo1_in.csv",
+        "out_file": "seed/Week1/Grupo1_out.csv"
+      },
+      "analysis_available": [
+        "preview",
+        "eda",
+        "clustering",
+        "notes",
+        "report"
+      ],
+      "expected_inputs": [
+        "CSV IN de la semana",
+        "CSV OUT de la semana",
+        "Definicion del problema y contexto del grupo"
+      ],
+      "checklist": [
+        "Validar formato y tipos de datos",
+        "Detectar faltantes, cardinalidad y columnas tecnicas",
+        "Documentar hallazgos iniciales"
+      ],
+      "deliverables": [
+        "Reporte semanal EDA en Markdown/HTML",
+        "Graficos exportables PNG",
+        "Notas persistentes del analisis"
+      ],
+      "artifact_templates": [
+        {
+          "kind": "dataset_raw",
+          "label": "Dataset raw IN",
+          "relative_path": "workspace/week-1/raw_in.csv"
+        },
+        {
+          "kind": "dataset_raw",
+          "label": "Dataset raw OUT",
+          "relative_path": "workspace/week-1/raw_out.csv"
+        },
+        {
+          "kind": "dataset",
+          "label": "Canonical dataset",
+          "relative_path": "workspace/week-1/canonical.csv"
+        },
+        {
+          "kind": "dataset_imputed",
+          "label": "Dataset analitico IN",
+          "relative_path": "workspace/week-1/analysis_in_imputed.csv"
+        },
+        {
+          "kind": "dataset_imputed",
+          "label": "Dataset analitico OUT",
+          "relative_path": "workspace/week-1/analysis_out_imputed.csv"
+        },
+        {
+          "kind": "metadata",
+          "label": "Metadata del pipeline",
+          "relative_path": "workspace/week-1/metadata.json"
+        },
+        {
+          "kind": "clustering",
+          "label": "Resumen OPTICS IN",
+          "relative_path": "workspace/week-1/optics_in.json"
+        },
+        {
+          "kind": "clustering",
+          "label": "Resumen OPTICS OUT",
+          "relative_path": "workspace/week-1/optics_out.json"
+        },
+        {
+          "kind": "report_markdown",
+          "label": "Reporte Markdown",
+          "relative_path": "workspace/week-1/report.md"
+        },
+        {
+          "kind": "report_html",
+          "label": "Reporte HTML",
+          "relative_path": "workspace/week-1/report.html"
+        }
+      ]
+    },
+    {
+      "week_id": "week-2",
+      "week_number": 2,
+      "title": "Semana 2",
+      "stage_name": "ML",
+      "status": "active",
+      "summary": "Prediccion y evaluacion con historia temporal multisemana usando el seed acumulado.",
+      "description": "La segunda etapa usa el dataset historico de cinco semanas para entrenar un modelo temporal y medir capacidad predictiva sobre la ultima semana disponible.",
+      "seed_paths": {
+        "in_file": "seed/Week2/Grupo1_5W_in.csv",
+        "out_file": "seed/Week2/Grupo1_5W_out.csv"
+      },
+      "analysis_available": [
+        "preview",
+        "ml_overview",
+        "notes",
+        "report"
+      ],
+      "expected_inputs": [
+        "Serie historica IN por semana",
+        "Serie historica OUT por semana",
+        "Variable objetivo DaysInDeposit"
+      ],
+      "checklist": [
+        "Separar entrenamiento y holdout temporal",
+        "Comparar error del modelo contra baseline",
+        "Documentar variables relevantes y limitaciones"
+      ],
+      "deliverables": [
+        "Resumen de evaluacion ML",
+        "Reporte semanal ML en Markdown/HTML",
+        "Artefactos reutilizables para etapas posteriores"
+      ],
+      "artifact_templates": [
+        {
+          "kind": "dataset",
+          "label": "Canonical dataset",
+          "relative_path": "workspace/week-2/canonical.csv"
+        },
+        {
+          "kind": "metadata",
+          "label": "Metadata del pipeline",
+          "relative_path": "workspace/week-2/metadata.json"
+        },
+        {
+          "kind": "report_markdown",
+          "label": "Reporte Markdown",
+          "relative_path": "workspace/week-2/report.md"
+        },
+        {
+          "kind": "report_html",
+          "label": "Reporte HTML",
+          "relative_path": "workspace/week-2/report.html"
+        }
+      ]
+    },
+    {
+      "week_id": "week-3",
+      "week_number": 3,
+      "title": "Semana 3",
+      "stage_name": "Modelamiento matematico",
+      "status": "scaffolded",
+      "summary": "Definicion inicial del modelo matematico a partir del conocimiento de datos y ML.",
+      "description": "Esta etapa consolidara variables de decision, funcion objetivo y restricciones del sistema.",
+      "seed_paths": {},
+      "analysis_available": [],
+      "expected_inputs": [
+        "Variables relevantes identificadas en Semana 1 y Semana 2",
+        "Supuestos del sistema",
+        "Restricciones del problema"
+      ],
+      "checklist": [
+        "Definir variables de decision",
+        "Escribir funcion objetivo",
+        "Identificar restricciones duras y blandas"
+      ],
+      "deliverables": [
+        "Borrador del modelo matematico",
+        "Checklist de variables y restricciones",
+        "Reporte de preparacion"
+      ],
+      "artifact_templates": [
+        {
+          "kind": "report_markdown",
+          "label": "Reporte Markdown",
+          "relative_path": "workspace/week-3/report.md"
+        },
+        {
+          "kind": "report_html",
+          "label": "Reporte HTML",
+          "relative_path": "workspace/week-3/report.html"
+        }
+      ]
+    },
+    {
+      "week_id": "week-4",
+      "week_number": 4,
+      "title": "Semana 4",
+      "stage_name": "Restricciones y escenarios",
+      "status": "scaffolded",
+      "summary": "Preparacion de escenarios y reglas para evaluar factibilidad.",
+      "description": "Esta etapa deja listos los escenarios de simulacion y las restricciones que condicionan las soluciones futuras.",
+      "seed_paths": {},
+      "analysis_available": [],
+      "expected_inputs": [
+        "Modelo matematico base",
+        "Rangos y parametros de operacion",
+        "Escenarios de negocio o sistema"
+      ],
+      "checklist": [
+        "Formalizar escenarios",
+        "Definir parametros calibrables",
+        "Preparar inputs para busqueda factible"
+      ],
+      "deliverables": [
+        "Escenarios versionados",
+        "Reporte de restricciones",
+        "Checklist de consistencia"
+      ],
+      "artifact_templates": [
+        {
+          "kind": "report_markdown",
+          "label": "Reporte Markdown",
+          "relative_path": "workspace/week-4/report.md"
+        },
+        {
+          "kind": "report_html",
+          "label": "Reporte HTML",
+          "relative_path": "workspace/week-4/report.html"
+        }
+      ]
+    },
+    {
+      "week_id": "week-5",
+      "week_number": 5,
+      "title": "Semana 5",
+      "stage_name": "Busqueda de soluciones factibles",
+      "status": "scaffolded",
+      "summary": "Preparacion del flujo que encontrara soluciones validas para el modelo.",
+      "description": "Esta etapa se enfocara en la generacion de soluciones factibles y la comparacion de escenarios viables.",
+      "seed_paths": {},
+      "analysis_available": [],
+      "expected_inputs": [
+        "Modelo y restricciones consolidados",
+        "Escenarios validados",
+        "Criterios de aceptacion"
+      ],
+      "checklist": [
+        "Definir heuristica o solver inicial",
+        "Validar factibilidad de soluciones",
+        "Registrar resultados comparables"
+      ],
+      "deliverables": [
+        "Resumen de soluciones factibles",
+        "Reporte de escenarios",
+        "Trazabilidad de resultados"
+      ],
+      "artifact_templates": [
+        {
+          "kind": "report_markdown",
+          "label": "Reporte Markdown",
+          "relative_path": "workspace/week-5/report.md"
+        },
+        {
+          "kind": "report_html",
+          "label": "Reporte HTML",
+          "relative_path": "workspace/week-5/report.html"
+        }
+      ]
+    },
+    {
+      "week_id": "week-6",
+      "week_number": 6,
+      "title": "Semana 6",
+      "stage_name": "Optimizacion y recomendaciones",
+      "status": "scaffolded",
+      "summary": "Etapa final para optimizar el sistema y comunicar recomendaciones.",
+      "description": "La etapa final integrara resultados, comparara politicas y dejara recomendaciones accionables para presentacion.",
+      "seed_paths": {},
+      "analysis_available": [],
+      "expected_inputs": [
+        "Soluciones factibles consolidadas",
+        "Metricas de desempeno",
+        "Criterios de decision final"
+      ],
+      "checklist": [
+        "Optimizar parametros",
+        "Comparar soluciones",
+        "Sintetizar recomendaciones para presentacion"
+      ],
+      "deliverables": [
+        "Reporte final de optimizacion",
+        "Conclusiones del framework",
+        "Base para presentacion academica"
+      ],
+      "artifact_templates": [
+        {
+          "kind": "report_markdown",
+          "label": "Reporte Markdown",
+          "relative_path": "workspace/week-6/report.md"
+        },
+        {
+          "kind": "report_html",
+          "label": "Reporte HTML",
+          "relative_path": "workspace/week-6/report.html"
+        }
+      ]
+    }
+  ]
+}

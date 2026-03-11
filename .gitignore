@@ -1,0 +1,25 @@
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/app/**/__pycache__/
+backend/tests/**/__pycache__/
+*.pyc
+
+# Data artifacts
+backend/data/datasets/*
+!backend/data/datasets/.gitkeep
+workspace/*
+!workspace/.gitkeep
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# OS
+.DS_Store
+
+# Envs
+.env
+.env.*
+

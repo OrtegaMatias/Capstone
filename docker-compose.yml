@@ -16,6 +16,7 @@ services:
       - SEED_DIR=/app/seed
       - WORKSPACE_DIR=/app/workspace
       - FRAMEWORK_MANIFEST_PATH=/app/framework/manifest.json
+      - CORS_ORIGINS=*
 
   frontend:
     build:
@@ -26,7 +27,5 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    environment:
-      - VITE_API_BASE_URL=http://localhost:8000/api/v1
     depends_on:
       - backend

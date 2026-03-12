@@ -18,6 +18,7 @@ import type {
   MlBenchmarkRow,
   MlEvaluationSummary,
   MlModelResult,
+  StrategyComparisonEntry,
   TreeNode,
 } from '../api/types';
 import BoxplotPanel from './BoxplotPanel';
@@ -33,6 +34,11 @@ function formatMetric(value?: number | null): string {
   return value == null || Number.isNaN(value) ? '-' : value.toFixed(3);
 }
 
+function formatSignedMetric(value?: number | null): string {
+  if (value == null || Number.isNaN(value)) return '-';
+  return `${value > 0 ? '+' : ''}${value.toFixed(3)}`;
+}
+
 function tabLabel(tab: TabKey): string {
   if (tab === 'regresiones') return 'Regresiones';
   if (tab === 'heuristicas') return 'Heurísticas';
@@ -41,6 +47,47 @@ function tabLabel(tab: TabKey): string {
 
 function modelBadgeText(model: MlModelResult): string {
   return model.strategy_label ? `${model.model_name} · ${model.strategy_label}` : model.model_name;
+}
+
+function strategyEntryText(entry?: StrategyComparisonEntry | null): string {
+  if (!entry) return 'n/a';
+  return entry.strategy_label ? `${entry.model_name} · ${entry.strategy_label}` : entry.model_name;
+}
+
+function winnerLabel(winner?: string | null): string {
+  if (winner === 'regression') return 'Regresión';
+  if (winner === 'heuristic') return 'Heurística';
+  if (winner === 'tie') return 'Empate';
+  return 'n/a';
+}
+
+function isBestRegressionRow(row: MlBenchmarkRow, bestRegression?: StrategyComparisonEntry | null): boolean {
+  if (!bestRegression || row.model_name !== bestRegression.model_name) return false;
+  if (bestRegression.strategy_name) return row.strategy_name === bestRegression.strategy_name;
+  if (bestRegression.strategy_label) return row.strategy_label === bestRegression.strategy_label;
+  return true;
+}
+
+function isBestRegressionModel(model: MlModelResult, bestRegression?: StrategyComparisonEntry | null): boolean {
+  if (!bestRegression || model.model_name !== bestRegression.model_name) return false;
+  if (bestRegression.strategy_name) return model.strategy_name === bestRegression.strategy_name;
+  if (bestRegression.strategy_label) return model.strategy_label === bestRegression.strategy_label;
+  return true;
+}
+
+function sortByMetric(value?: number | null): number {
+  return value == null || Number.isNaN(value) ? Number.POSITIVE_INFINITY : value;
+}
+
+function strategyLabelRank(label: string): number {
+  const order = [
+    'Raw target',
+    'Log1p target',
+    'Log1p + outlier normalization',
+    'Winsor IQR',
+  ];
+  const index = order.indexOf(label);
+  return index === -1 ? order.length : index;
 }
 
 function heuristicBadgeText(model: HeuristicModelResult): string {
@@ -102,7 +149,13 @@ function TreeNodeView({ node, depth = 0 }: { node?: TreeNode | null; depth?: num
   );
 }
 
-function BenchmarkTable({ rows }: { rows: MlBenchmarkRow[] }) {
+function BenchmarkTable({
+  rows,
+  bestRegression,
+}: {
+  rows: MlBenchmarkRow[];
+  bestRegression?: StrategyComparisonEntry | null;
+}) {
   return (
     <div className="table-wrap">
       <table>
@@ -118,24 +171,174 @@ function BenchmarkTable({ rows }: { rows: MlBenchmarkRow[] }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={`${row.model_name}-${row.strategy_name}`}>
-              <td>{row.model_name}</td>
-              <td>{row.strategy_label}</td>
-              <td>{formatMetric(row.metrics.mae)}</td>
-              <td>{formatMetric(row.metrics.rmse)}</td>
-              <td>{formatMetric(row.metrics.medae)}</td>
-              <td>{formatMetric(row.metrics.r2)}</td>
-              <td>{formatMetric(row.metrics.baseline_mae)}</td>
-            </tr>
-          ))}
+          {rows.map((row) => {
+            const isWinner = isBestRegressionRow(row, bestRegression);
+            return (
+              <tr
+                key={`${row.model_name}-${row.strategy_name}`}
+                style={isWinner ? { backgroundColor: 'rgba(15, 155, 114, 0.12)' } : undefined}
+              >
+                <td>
+                  <div>{row.model_name}</div>
+                  {isWinner ? (
+                    <small style={{ color: '#0f9b72', fontWeight: 700 }}>Ganador global</small>
+                  ) : null}
+                </td>
+                <td>{row.strategy_label}</td>
+                <td>{formatMetric(row.metrics.mae)}</td>
+                <td>{formatMetric(row.metrics.rmse)}</td>
+                <td>{formatMetric(row.metrics.medae)}</td>
+                <td>{formatMetric(row.metrics.r2)}</td>
+                <td>{formatMetric(row.metrics.baseline_mae)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
 }
 
+function ModelBenchmarkTable({
+  models,
+  bestRegression,
+}: {
+  models: MlModelResult[];
+  bestRegression?: StrategyComparisonEntry | null;
+}) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Modelo</th>
+            <th>Mejor estrategia</th>
+            <th>Estado</th>
+            <th>MAE</th>
+            <th>RMSE</th>
+            <th>MedAE</th>
+          </tr>
+        </thead>
+        <tbody>
+          {models.map((model) => {
+            const isWinner = isBestRegressionModel(model, bestRegression);
+            const isAvailable = model.metrics.mae != null;
+            return (
+              <tr
+                key={`${model.model_name}-${model.strategy_name ?? 'none'}`}
+                style={isWinner ? { backgroundColor: 'rgba(15, 155, 114, 0.12)' } : undefined}
+              >
+                <td>
+                  <div>{model.model_name}</div>
+                  {isWinner ? (
+                    <small style={{ color: '#0f9b72', fontWeight: 700 }}>Ganador global</small>
+                  ) : null}
+                </td>
+                <td>
+                  <div>{model.strategy_label ?? 'n/a'}</div>
+                  {model.notes?.[0] ? <small className="muted">{model.notes[0]}</small> : null}
+                </td>
+                <td>{isAvailable ? 'Disponible' : 'No disponible'}</td>
+                <td>{formatMetric(model.metrics.mae)}</td>
+                <td>{formatMetric(model.metrics.rmse)}</td>
+                <td>{formatMetric(model.metrics.medae)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function StrategyBenchmarkTables({
+  rows,
+  bestRegression,
+}: {
+  rows: MlBenchmarkRow[];
+  bestRegression?: StrategyComparisonEntry | null;
+}) {
+  const availableRows = rows
+    .filter((row) => row.available && row.strategy_name !== 'baseline')
+    .sort((left, right) => {
+      if (left.strategy_label !== right.strategy_label) return strategyLabelRank(left.strategy_label) - strategyLabelRank(right.strategy_label);
+      return sortByMetric(left.metrics.mae) - sortByMetric(right.metrics.mae);
+    });
+  const unavailableRows = rows.filter((row) => !row.available);
+  const groupedRows = availableRows
+    .reduce<Array<{ strategyLabel: string; rows: MlBenchmarkRow[] }>>((groups, row) => {
+      const existing = groups.find((group) => group.strategyLabel === row.strategy_label);
+      if (existing) {
+        existing.rows.push(row);
+        return groups;
+      }
+      groups.push({ strategyLabel: row.strategy_label, rows: [row] });
+      return groups;
+    }, [])
+    .sort((left, right) => strategyLabelRank(left.strategyLabel) - strategyLabelRank(right.strategyLabel));
+
+  return (
+    <div className="stack">
+      {groupedRows.map((group) => (
+        <div key={group.strategyLabel} className="panel table-panel">
+          <div className="table-header">
+            <div>
+              <h3>Benchmark detallado: {group.strategyLabel}</h3>
+              <span className="muted">Comparación por modelo dentro de una misma transformación del target.</span>
+            </div>
+          </div>
+          <BenchmarkTable rows={group.rows} bestRegression={bestRegression} />
+        </div>
+      ))}
+
+      {unavailableRows.length > 0 ? (
+        <div className="panel table-panel">
+          <div className="table-header">
+            <div>
+              <h3>Modelos sin benchmark en esta ejecución</h3>
+              <span className="muted">Se mantienen visibles para que no desaparezcan del análisis aunque falte dependencia o entrenamiento.</span>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Modelo</th>
+                  <th>Estado</th>
+                  <th>Detalle</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unavailableRows.map((row) => (
+                  <tr key={`${row.model_name}-${row.strategy_name}`}>
+                    <td>{row.model_name}</td>
+                    <td>{row.strategy_label}</td>
+                    <td>{row.notes[0] ?? 'Sin detalle adicional.'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function PredictionsChart({ rows, title }: { rows: Array<{ actual: number; predicted: number }>; title: string }) {
+  if (rows.length === 0) {
+    return (
+      <div className="panel table-panel">
+        <div className="table-header">
+          <div>
+            <h3>{title}</h3>
+            <span className="muted">No hay predicciones disponibles para este modelo en la ejecución actual.</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const chartData = [...rows]
     .sort((left, right) => left.actual - right.actual)
     .map((row, index) => ({
@@ -275,17 +478,64 @@ function TargetTransformationPanel({ payload }: Props) {
 }
 
 function RegressionView({ payload }: Props) {
+  const comparison = payload.strategy_comparison;
+  const bestRegression = comparison?.best_regression;
+  const bestHeuristic = comparison?.best_heuristic;
   const benchmarkRows = [...payload.preprocessing_benchmarks].sort(
-    (left, right) => (left.metrics.mae ?? Number.POSITIVE_INFINITY) - (right.metrics.mae ?? Number.POSITIVE_INFINITY)
+    (left, right) => sortByMetric(left.metrics.mae) - sortByMetric(right.metrics.mae)
   );
-  const [selectedModelIndex, setSelectedModelIndex] = useState(0);
+  const modelRows = [...payload.models].sort(
+    (left, right) => sortByMetric(left.metrics.mae) - sortByMetric(right.metrics.mae)
+  );
+  const baselineRow = benchmarkRows.find((row) => row.strategy_name === 'baseline' || row.model_name === 'Global Median');
+  const initialSelectedModelIndex = payload.models.findIndex((model) => isBestRegressionModel(model, bestRegression));
+  const [selectedModelIndex, setSelectedModelIndex] = useState(initialSelectedModelIndex >= 0 ? initialSelectedModelIndex : 0);
   const selectedModel = payload.models[Math.min(selectedModelIndex, Math.max(payload.models.length - 1, 0))];
+  const bestRegressionLabel = strategyEntryText(bestRegression);
+  const bestHeuristicLabel = bestHeuristic?.model_name ?? 'n/a';
+  const comparisonWinner = winnerLabel(comparison?.winner);
+  const leaderMetricLabel =
+    comparison?.winner === 'regression'
+      ? 'MAE líder (regresión)'
+      : comparison?.winner === 'heuristic'
+        ? 'MAE líder (heurística)'
+        : comparison?.winner === 'tie'
+          ? 'MAE líder (empate)'
+          : 'MAE líder';
+  const leaderMetric =
+    comparison?.winner === 'heuristic'
+      ? bestHeuristic?.metrics.mae
+      : comparison?.winner === 'regression'
+        ? bestRegression?.metrics.mae
+        : comparison?.winner === 'tie'
+          ? Math.min(bestRegression?.metrics.mae ?? Number.POSITIVE_INFINITY, bestHeuristic?.metrics.mae ?? Number.POSITIVE_INFINITY)
+          : bestRegression?.metrics.mae;
+  const comparisonRows = [
+    {
+      label: 'Mejor regresión',
+      selection: bestRegressionLabel,
+      metrics: bestRegression?.metrics,
+    },
+    {
+      label: 'Mejor heurística',
+      selection: bestHeuristicLabel,
+      metrics: bestHeuristic?.metrics,
+    },
+    {
+      label: 'Baseline',
+      selection: baselineRow ? `${baselineRow.model_name} · ${baselineRow.strategy_label}` : 'n/a',
+      metrics: baselineRow?.metrics,
+    },
+  ];
 
-  const topBenchmarkChart = benchmarkRows.slice(0, 10).map((row) => ({
-    name: `${row.model_name} · ${row.strategy_label}`,
-    MAE: row.metrics.mae ?? 0,
-    MedAE: row.metrics.medae ?? 0,
-  }));
+  const topBenchmarkChart = modelRows
+    .filter((row) => row.metrics.mae != null)
+    .map((row) => ({
+      name: row.model_name,
+      MAE: row.metrics.mae ?? 0,
+      MedAE: row.metrics.medae ?? 0,
+      isBestRegression: isBestRegressionModel(row, bestRegression),
+    }));
 
   const importanceData = selectedModel
     ? [...selectedModel.feature_effects]
@@ -301,6 +551,12 @@ function RegressionView({ payload }: Props) {
       <TargetTransformationPanel payload={payload} />
 
       <div className="panel">
+        <div className="table-header">
+          <div>
+            <h3>Resumen comparativo</h3>
+            <span className="muted">La pestaña resume el ganador global antes de abrir el detalle por segmento.</span>
+          </div>
+        </div>
         <div className="mini-grid">
           <article className="mini-panel">
             <strong>Train weeks</strong>
@@ -312,11 +568,24 @@ function RegressionView({ payload }: Props) {
           </article>
           <article className="mini-panel">
             <strong>Mejor regresión</strong>
-            <p>{payload.strategy_comparison?.best_regression ? `${payload.strategy_comparison.best_regression.model_name} · ${payload.strategy_comparison.best_regression.strategy_label}` : 'n/a'}</p>
+            <p>{bestRegressionLabel}</p>
           </article>
           <article className="mini-panel">
-            <strong>MAE líder</strong>
-            <p>{formatMetric(payload.strategy_comparison?.best_regression?.metrics.mae)}</p>
+            <strong>Mejor heurística</strong>
+            <p>{bestHeuristicLabel}</p>
+          </article>
+          <article className="mini-panel">
+            <strong>Ganador</strong>
+            <p>{comparisonWinner}</p>
+          </article>
+          <article className="mini-panel">
+            <strong>{leaderMetricLabel}</strong>
+            <p>{formatMetric(Number.isFinite(leaderMetric ?? Number.NaN) ? leaderMetric : null)}</p>
+          </article>
+          <article className="mini-panel">
+            <strong>Gap MAE</strong>
+            <p>{formatSignedMetric(comparison?.mae_gap)}</p>
+            <small className="muted">heurística - regresión</small>
           </article>
         </div>
       </div>
@@ -324,9 +593,45 @@ function RegressionView({ payload }: Props) {
       <div className="panel table-panel">
         <div className="table-header">
           <div>
-            <h3>Matriz de benchmark</h3>
+            <h3>Comparativa principal</h3>
+            <span className="muted">Resumen directo entre el ganador de regresión, la mejor heurística y el baseline robusto.</span>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Referencia</th>
+                <th>Selección</th>
+                <th>MAE</th>
+                <th>RMSE</th>
+                <th>MedAE</th>
+              </tr>
+            </thead>
+            <tbody>
+              {comparisonRows.map((row) => (
+                <tr key={row.label}>
+                  <td>{row.label}</td>
+                  <td>{row.selection}</td>
+                  <td>{formatMetric(row.metrics?.mae)}</td>
+                  <td>{formatMetric(row.metrics?.rmse)}</td>
+                  <td>{formatMetric(row.metrics?.medae)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="muted" style={{ padding: '0.85rem 1.5rem 1.2rem' }}>
+          {comparison?.narrative ?? 'Sin comparación disponible entre regresión, heurística y baseline.'}
+        </p>
+      </div>
+
+      <div className="panel table-panel">
+        <div className="table-header">
+          <div>
+            <h3>Benchmark por modelo</h3>
             <span className="muted">
-              Comparación de modelos y estrategias de target en escala original de días.
+              Una fila por modelo. Si un booster no corrió, queda listado aquí y en el detalle por modelo.
             </span>
           </div>
         </div>
@@ -355,10 +660,10 @@ function RegressionView({ payload }: Props) {
               />
               <Legend />
               <Bar dataKey="MAE" radius={[4, 4, 0, 0]} fill="#21495f">
-                {topBenchmarkChart.map((entry, index) => (
+                {topBenchmarkChart.map((entry) => (
                   <Cell
                     key={`mae-${entry.name}`}
-                    fill={index === 0 ? '#0f9b72' : '#21495f'}
+                    fill={entry.isBestRegression ? '#0f9b72' : '#21495f'}
                   />
                 ))}
               </Bar>
@@ -366,8 +671,10 @@ function RegressionView({ payload }: Props) {
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <BenchmarkTable rows={benchmarkRows} />
+        <ModelBenchmarkTable models={modelRows} bestRegression={bestRegression} />
       </div>
+
+      <StrategyBenchmarkTables rows={benchmarkRows} bestRegression={bestRegression} />
 
       {selectedModel ? (
         <>
@@ -375,7 +682,7 @@ function RegressionView({ payload }: Props) {
             <div className="table-header">
               <div>
                 <h3>Detalle por modelo</h3>
-                <span className="muted">Cada tarjeta representa la mejor estrategia retenida por modelo.</span>
+                <span className="muted">Cada tarjeta representa la mejor estrategia retenida por modelo o su estado de disponibilidad.</span>
               </div>
             </div>
             <div className="tag-list" style={{ marginTop: '0.75rem' }}>
@@ -478,6 +785,9 @@ function RegressionView({ payload }: Props) {
             <div className="table-header">
               <div>
                 <h3>Segmentación por {report.family_label}</h3>
+                <span className="muted" style={{ display: 'block' }}>
+                  MAE mejor regresión: <strong>{bestRegressionLabel}</strong>.
+                </span>
                 <span className="muted">
                   Se reportan solo segmentos representativos; el resto se consolida en <strong>Other</strong>.
                 </span>
@@ -492,7 +802,7 @@ function RegressionView({ payload }: Props) {
                     <th>Test</th>
                     <th>Actual mean</th>
                     <th>Actual median</th>
-                    <th>MAE regresión</th>
+                    <th>MAE mejor regresión</th>
                     <th>MAE heurística</th>
                     <th>MAE baseline</th>
                   </tr>

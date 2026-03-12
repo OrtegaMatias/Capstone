@@ -60,11 +60,21 @@ def test_temporal_ml_overview_reports_optional_boosters_as_warnings(monkeypatch)
     payload = compute_temporal_ml_overview(_build_temporal_df())
 
     warning_codes = {warning["code"] for warning in payload["warnings"]}
+    benchmark_index = {(row["model_name"], row["strategy_name"]): row for row in payload["preprocessing_benchmarks"]}
+    model_index = {model["model_name"]: model for model in payload["models"]}
     assert payload["model_built"] is True
     assert "catboost_unavailable" in warning_codes
     assert "lightgbm_unavailable" in warning_codes
     assert "xgboost_unavailable" in warning_codes
     assert payload["models"]
+    assert ("LightGBM", "unavailable") in benchmark_index
+    assert ("XGBoost", "unavailable") in benchmark_index
+    assert benchmark_index[("LightGBM", "unavailable")]["available"] is False
+    assert benchmark_index[("XGBoost", "unavailable")]["available"] is False
+    assert model_index["LightGBM"]["strategy_name"] == "unavailable"
+    assert model_index["XGBoost"]["strategy_name"] == "unavailable"
+    assert model_index["LightGBM"]["metrics"]["mae"] is None
+    assert model_index["XGBoost"]["metrics"]["mae"] is None
 
 
 def test_temporal_ml_overview_exposes_target_strategies_and_learning_sections() -> None:

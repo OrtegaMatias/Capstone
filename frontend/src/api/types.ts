@@ -661,10 +661,12 @@ export type MlMetricSummary = {
   mae?: number | null;
   rmse?: number | null;
   r2?: number | null;
+  medae?: number | null;
   baseline_mae?: number | null;
 };
 
 export type MlPredictionSample = {
+  row_id: number;
   week: string;
   actual: number;
   predicted: number;
@@ -687,10 +689,111 @@ export type TreeNode = {
 
 export type MlModelResult = {
   model_name: string;
+  strategy_name?: string | null;
+  strategy_label?: string | null;
   metrics: MlMetricSummary;
+  train_metrics?: MlMetricSummary | null;
   predictions: MlPredictionSample[];
   feature_effects: MlFeatureEffect[];
   tree_structure?: TreeNode | null;
+  notes?: string[];
+};
+
+export type MlBenchmarkRow = {
+  model_name: string;
+  strategy_name: string;
+  strategy_label: string;
+  metrics: MlMetricSummary;
+  available: boolean;
+  notes: string[];
+};
+
+export type MlSegmentRow = {
+  segment: string;
+  train_count: number;
+  test_count: number;
+  actual_mean?: number | null;
+  actual_median?: number | null;
+  regression_mae?: number | null;
+  heuristic_mae?: number | null;
+  baseline_mae?: number | null;
+};
+
+export type MlSegmentReport = {
+  family_key: string;
+  family_label: string;
+  grouping_type: string;
+  rows: MlSegmentRow[];
+};
+
+export type MlTierUsage = {
+  source: string;
+  count: number;
+};
+
+export type HeuristicModelResult = {
+  model_name: string;
+  family_key: string;
+  family_label: string;
+  rule_summary: string;
+  train_metrics: MlMetricSummary;
+  metrics: MlMetricSummary;
+  predictions: MlPredictionSample[];
+  tier_usage: MlTierUsage[];
+};
+
+export type StrategyComparisonEntry = {
+  model_name: string;
+  strategy_name?: string | null;
+  strategy_label?: string | null;
+  metrics: MlMetricSummary;
+  notes?: string[];
+};
+
+export type StrategyComparison = {
+  winner: string;
+  mae_gap: number;
+  best_regression: StrategyComparisonEntry;
+  best_heuristic: StrategyComparisonEntry;
+  narrative: string;
+};
+
+export type LearningSection = {
+  slug: string;
+  title: string;
+  summary: string;
+  bullets: string[];
+};
+
+export type TargetTransformationStats = {
+  count: number;
+  mean?: number | null;
+  std?: number | null;
+  min?: number | null;
+  p25?: number | null;
+  p50?: number | null;
+  p75?: number | null;
+  max?: number | null;
+  skew?: number | null;
+  iqr?: number | null;
+  lower_bound?: number | null;
+  upper_bound?: number | null;
+  outlier_count: number;
+  outlier_ratio: number;
+};
+
+export type TargetTransformationStep = {
+  step_key: string;
+  step_label: string;
+  scale: string;
+  stats: TargetTransformationStats;
+  notes: string[];
+};
+
+export type TargetTransformationDiagnostics = {
+  scope: string;
+  boxplot_data: BoxplotSeries[];
+  steps: TargetTransformationStep[];
 };
 
 export type MlEvaluationSummary = {
@@ -705,6 +808,12 @@ export type MlEvaluationSummary = {
   categorical_features: string[];
   models: MlModelResult[];
   warnings: WarningItem[];
+  preprocessing_benchmarks: MlBenchmarkRow[];
+  segment_reports: MlSegmentReport[];
+  heuristic_models: HeuristicModelResult[];
+  strategy_comparison?: StrategyComparison | null;
+  learning_sections: LearningSection[];
+  target_transformation_diagnostics?: TargetTransformationDiagnostics | null;
   supervised_overview: SupervisedOverviewResponse;
   anova: AnovaResponse;
   multiple_regression: MultipleRegressionResponse;

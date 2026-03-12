@@ -134,10 +134,29 @@ def test_week_2_ml_overview_uses_temporal_holdout(framework_client) -> None:
     assert payload["model_built"] is True
     assert payload["split"]["test_weeks"] == ["5"]
     assert payload["split"]["train_rows"] > 0
-    assert payload["metrics"]["mae"] is not None
-    assert payload["metrics"]["baseline_mae"] is not None
-    assert payload["predictions"]
+    assert payload["models"]
+    assert payload["preprocessing_benchmarks"]
+    assert payload["heuristic_models"]
+    assert payload["segment_reports"]
+    assert payload["learning_sections"]
+    assert payload["target_transformation_diagnostics"]["scope"] == "train_only"
+    assert payload["target_transformation_diagnostics"]["boxplot_data"]
+    assert payload["strategy_comparison"]["best_regression"]["metrics"]["mae"] is not None
+    assert payload["strategy_comparison"]["best_heuristic"]["metrics"]["mae"] is not None
+    assert any(row["strategy_name"] == "log1p" for row in payload["preprocessing_benchmarks"])
+    assert any(row["strategy_name"] == "log1p_outlier_norm" for row in payload["preprocessing_benchmarks"])
+    assert any(row["strategy_name"] == "winsor_iqr" for row in payload["preprocessing_benchmarks"])
+    assert any(model["model_name"] == "Hierarchical Backoff" for model in payload["heuristic_models"])
     assert any(warning["code"] == "temporal_holdout" for warning in payload["warnings"])
+
+    report = framework_client.get("/api/v1/weeks/week-2/report")
+    assert report.status_code == 200
+    report_payload = report.json()
+    assert "## Evaluacion ML" in report_payload["markdown_content"]
+    assert "## Transformacion del target" in report_payload["markdown_content"]
+    assert "## Benchmark de preprocesamiento" in report_payload["markdown_content"]
+    assert "## Segmentacion representativa" in report_payload["markdown_content"]
+    assert "## Aprendizajes" in report_payload["markdown_content"]
 
 
 def test_week_notes_persist_inside_workspace(framework_client, framework_repo_root: Path) -> None:

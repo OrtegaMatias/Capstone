@@ -483,6 +483,192 @@ class FrameworkService:
         temporal_payload["multiple_regression"] = multiple_regression_payload
         return temporal_payload
 
+    def _week_ml_markdown_sections(self, ml: dict[str, Any]) -> list[str]:
+        lines = [
+            "",
+            "## Evaluacion ML",
+            f"- Semanas train: {', '.join(ml['split']['train_weeks']) or 'n/a'}",
+            f"- Semanas test: {', '.join(ml['split']['test_weeks']) or 'n/a'}",
+        ]
+
+        comparison = ml.get("strategy_comparison")
+        best_regression = comparison.get("best_regression") if comparison else None
+        best_heuristic = comparison.get("best_heuristic") if comparison else None
+        if best_regression:
+            lines.extend(
+                [
+                    f"- Mejor regresion: {best_regression['model_name']} ({best_regression.get('strategy_label') or 'n/a'})",
+                    f"- MAE regresion: {best_regression['metrics'].get('mae')}",
+                    f"- RMSE regresion: {best_regression['metrics'].get('rmse')}",
+                    f"- MedAE regresion: {best_regression['metrics'].get('medae')}",
+                ]
+            )
+        if best_heuristic:
+            lines.extend(
+                [
+                    f"- Mejor heuristica: {best_heuristic['model_name']}",
+                    f"- MAE heuristica: {best_heuristic['metrics'].get('mae')}",
+                    f"- RMSE heuristica: {best_heuristic['metrics'].get('rmse')}",
+                    f"- MedAE heuristica: {best_heuristic['metrics'].get('medae')}",
+                ]
+            )
+        if comparison:
+            lines.append(f"- Comparacion: {comparison.get('narrative')}")
+
+        diagnostics = ml.get("target_transformation_diagnostics")
+        if diagnostics and diagnostics.get("steps"):
+            lines.extend(["", "## Transformacion del target"])
+            lines.append(
+                f"- Alcance del diagnostico: {diagnostics.get('scope')}. Los boxplots se exponen en frontend y las estadisticas resumen el before/after."
+            )
+            for step in diagnostics.get("steps", [])[:4]:
+                stats = step.get("stats", {})
+                lines.append(
+                    f"- {step['step_label']} ({step.get('scale')}): media={stats.get('mean')}, mediana={stats.get('p50')}, skew={stats.get('skew')}, outliers={stats.get('outlier_count')} ({stats.get('outlier_ratio')})."
+                )
+
+        lines.extend(["", "## Benchmark de preprocesamiento"])
+        benchmarks = sorted(
+            ml.get("preprocessing_benchmarks", []),
+            key=lambda item: float(item.get("metrics", {}).get("mae") or 10**9),
+        )
+        for row in benchmarks[:8]:
+            lines.append(
+                f"- {row['model_name']} / {row['strategy_label']}: MAE={row['metrics'].get('mae')}, RMSE={row['metrics'].get('rmse')}, MedAE={row['metrics'].get('medae')}."
+            )
+
+        segment_reports = ml.get("segment_reports", [])
+        if segment_reports:
+            lines.extend(["", "## Segmentacion representativa"])
+            for report in segment_reports[:4]:
+                lines.append(f"- {report['family_label']}:")
+                for row in report.get("rows", [])[:3]:
+                    lines.append(
+                        f"  - {row['segment']}: test={row['test_count']}, mae_reg={row.get('regression_mae')}, mae_heur={row.get('heuristic_mae')}."
+                    )
+
+        learning_sections = ml.get("learning_sections", [])
+        if learning_sections:
+            lines.extend(["", "## Aprendizajes"])
+            for section in learning_sections[:6]:
+                lines.append(f"- {section['title']}: {section['summary']}")
+
+        warning_messages = [warning["message"] for warning in ml.get("warnings", [])[:6]]
+        if warning_messages:
+            lines.extend(["", "## Advertencias principales"])
+            lines.extend(f"- {message}" for message in warning_messages)
+
+        return lines
+
+    def _week_ml_html_sections(self, ml: dict[str, Any]) -> list[str]:
+        body_parts = [
+            "<h2>Evaluacion ML</h2>",
+            "<ul>",
+            f"<li>Semanas train: {escape(', '.join(ml['split']['train_weeks']) or 'n/a')}</li>",
+            f"<li>Semanas test: {escape(', '.join(ml['split']['test_weeks']) or 'n/a')}</li>",
+        ]
+
+        comparison = ml.get("strategy_comparison")
+        best_regression = comparison.get("best_regression") if comparison else None
+        best_heuristic = comparison.get("best_heuristic") if comparison else None
+        if best_regression:
+            body_parts.extend(
+                [
+                    f"<li>Mejor regresion: {escape(str(best_regression['model_name']))} ({escape(str(best_regression.get('strategy_label') or 'n/a'))})</li>",
+                    f"<li>MAE regresion: {escape(str(best_regression['metrics'].get('mae')))}</li>",
+                    f"<li>RMSE regresion: {escape(str(best_regression['metrics'].get('rmse')))}</li>",
+                    f"<li>MedAE regresion: {escape(str(best_regression['metrics'].get('medae')))}</li>",
+                ]
+            )
+        if best_heuristic:
+            body_parts.extend(
+                [
+                    f"<li>Mejor heuristica: {escape(str(best_heuristic['model_name']))}</li>",
+                    f"<li>MAE heuristica: {escape(str(best_heuristic['metrics'].get('mae')))}</li>",
+                    f"<li>RMSE heuristica: {escape(str(best_heuristic['metrics'].get('rmse')))}</li>",
+                    f"<li>MedAE heuristica: {escape(str(best_heuristic['metrics'].get('medae')))}</li>",
+                ]
+            )
+        if comparison:
+            body_parts.append(f"<li>Comparacion: {escape(str(comparison.get('narrative')))}</li>")
+        body_parts.append("</ul>")
+
+        diagnostics = ml.get("target_transformation_diagnostics")
+        if diagnostics and diagnostics.get("steps"):
+            diagnostics_html = "".join(
+                (
+                    f"<li><strong>{escape(str(step['step_label']))}</strong> "
+                    f"({escape(str(step.get('scale')))}): "
+                    f"media={escape(str(step.get('stats', {}).get('mean')))}, "
+                    f"mediana={escape(str(step.get('stats', {}).get('p50')))}, "
+                    f"skew={escape(str(step.get('stats', {}).get('skew')))}, "
+                    f"outliers={escape(str(step.get('stats', {}).get('outlier_count')))} "
+                    f"({escape(str(step.get('stats', {}).get('outlier_ratio')))}).</li>"
+                )
+                for step in diagnostics.get("steps", [])[:4]
+            )
+            body_parts.extend(
+                [
+                    "<h2>Transformacion del target</h2>",
+                    f"<p>Alcance del diagnostico: {escape(str(diagnostics.get('scope')))}. Los boxplots se visualizan en frontend.</p>",
+                    f"<ul>{diagnostics_html}</ul>",
+                ]
+            )
+
+        benchmarks = sorted(
+            ml.get("preprocessing_benchmarks", []),
+            key=lambda item: float(item.get("metrics", {}).get("mae") or 10**9),
+        )
+        benchmarks_html = "".join(
+            f"<li>{escape(str(row['model_name']))} / {escape(str(row['strategy_label']))}: "
+            f"MAE={escape(str(row['metrics'].get('mae')))}, "
+            f"RMSE={escape(str(row['metrics'].get('rmse')))}, "
+            f"MedAE={escape(str(row['metrics'].get('medae')))}.</li>"
+            for row in benchmarks[:8]
+        )
+        body_parts.extend(
+            [
+                "<h2>Benchmark de preprocesamiento</h2>",
+                f"<ul>{benchmarks_html or '<li>Sin benchmarks disponibles</li>'}</ul>",
+            ]
+        )
+
+        segment_reports = ml.get("segment_reports", [])
+        if segment_reports:
+            segment_parts = []
+            for report in segment_reports[:4]:
+                rows_html = "".join(
+                    f"<li>{escape(str(row['segment']))}: test={escape(str(row['test_count']))}, "
+                    f"mae_reg={escape(str(row.get('regression_mae')))}, "
+                    f"mae_heur={escape(str(row.get('heuristic_mae')))}.</li>"
+                    for row in report.get("rows", [])[:3]
+                )
+                segment_parts.append(
+                    f"<li><strong>{escape(str(report['family_label']))}</strong><ul>{rows_html or '<li>Sin segmentos representativos</li>'}</ul></li>"
+                )
+            body_parts.extend(
+                [
+                    "<h2>Segmentacion representativa</h2>",
+                    f"<ul>{''.join(segment_parts)}</ul>",
+                ]
+            )
+
+        learning_sections = ml.get("learning_sections", [])
+        if learning_sections:
+            learning_html = "".join(
+                f"<li><strong>{escape(str(section['title']))}</strong>: {escape(str(section['summary']))}</li>"
+                for section in learning_sections[:6]
+            )
+            body_parts.extend(["<h2>Aprendizajes</h2>", f"<ul>{learning_html}</ul>"])
+
+        warnings_html = "".join(
+            f"<li>{escape(str(warning['message']))}</li>" for warning in ml.get("warnings", [])[:6]
+        )
+        if warnings_html:
+            body_parts.extend(["<h2>Advertencias principales</h2>", f"<ul>{warnings_html}</ul>"])
+
+        return body_parts
+
     def _render_markdown_report(self, week: dict[str, Any]) -> str:
         if week["week_id"] == "week-1":
             return self._render_week1_academic_markdown_report(week)
@@ -527,25 +713,7 @@ class FrameworkService:
                     lines.extend(f"- {message}" for message in warning_messages)
             if "ml_overview" in week.get("analysis_available", []):
                 ml = self._build_week_ml_payload(week)
-                lines.extend(
-                    [
-                        "",
-                        "## Evaluacion ML",
-                        f"- Modelo: {ml['model_name']}",
-                        f"- Semanas train: {', '.join(ml['split']['train_weeks']) or 'n/a'}",
-                        f"- Semanas test: {', '.join(ml['split']['test_weeks']) or 'n/a'}",
-                        f"- MAE: {ml['metrics']['mae']}",
-                        f"- RMSE: {ml['metrics']['rmse']}",
-                        f"- R2: {ml['metrics']['r2']}",
-                        f"- Baseline MAE: {ml['metrics']['baseline_mae']}",
-                    ]
-                )
-                if ml["feature_effects"]:
-                    lines.extend(["", "## Principales efectos del modelo"])
-                    lines.extend(
-                        f"- {effect['feature']}: {round(float(effect['coefficient']), 4)}"
-                        for effect in ml["feature_effects"][:8]
-                    )
+                lines.extend(self._week_ml_markdown_sections(ml))
         else:
             lines.extend(
                 [
@@ -612,26 +780,7 @@ class FrameworkService:
                 )
             if "ml_overview" in week.get("analysis_available", []):
                 ml = self._build_week_ml_payload(week)
-                effects_html = "".join(
-                    f"<li>{escape(str(effect['feature']))}: {round(float(effect['coefficient']), 4)}</li>"
-                    for effect in ml["feature_effects"][:8]
-                )
-                body_parts.extend(
-                    [
-                        "<h2>Evaluacion ML</h2>",
-                        "<ul>",
-                        f"<li>Modelo: {escape(str(ml['model_name']))}</li>",
-                        f"<li>Semanas train: {escape(', '.join(ml['split']['train_weeks']) or 'n/a')}</li>",
-                        f"<li>Semanas test: {escape(', '.join(ml['split']['test_weeks']) or 'n/a')}</li>",
-                        f"<li>MAE: {escape(str(ml['metrics']['mae']))}</li>",
-                        f"<li>RMSE: {escape(str(ml['metrics']['rmse']))}</li>",
-                        f"<li>R2: {escape(str(ml['metrics']['r2']))}</li>",
-                        f"<li>Baseline MAE: {escape(str(ml['metrics']['baseline_mae']))}</li>",
-                        "</ul>",
-                        "<h2>Principales efectos del modelo</h2>",
-                        f"<ul>{effects_html or '<li>Sin efectos destacados</li>'}</ul>",
-                    ]
-                )
+                body_parts.extend(self._week_ml_html_sections(ml))
         else:
             body_parts.extend(
                 [

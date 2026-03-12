@@ -180,6 +180,16 @@ def _metric_summary(actual: np.ndarray, predicted: np.ndarray, baseline_predicti
     }
 
 
+def _empty_metric_summary() -> dict[str, Any]:
+    return {
+        "mae": None,
+        "rmse": None,
+        "r2": None,
+        "medae": None,
+        "baseline_mae": None,
+    }
+
+
 def _iqr_bounds(values: np.ndarray) -> tuple[float | None, float | None]:
     clean = np.asarray(values, dtype=float)
     clean = clean[np.isfinite(clean)]
@@ -339,6 +349,43 @@ def _dependency_warning(spec: ModelSpec) -> dict[str, Any]:
         "column": None,
         "message": f"{spec.name} benchmark skipped because optional dependency {dependency_name} is not installed.",
         "suggestion": detail,
+    }
+
+
+def _unavailable_benchmark_row(
+    spec: ModelSpec,
+    *,
+    strategy_name: str,
+    strategy_label: str,
+    notes: list[str],
+) -> dict[str, Any]:
+    return {
+        "model_name": spec.name,
+        "strategy_name": strategy_name,
+        "strategy_label": strategy_label,
+        "metrics": _empty_metric_summary(),
+        "available": False,
+        "notes": notes,
+    }
+
+
+def _unavailable_model_result(
+    spec: ModelSpec,
+    *,
+    strategy_name: str,
+    strategy_label: str,
+    notes: list[str],
+) -> dict[str, Any]:
+    return {
+        "model_name": spec.name,
+        "strategy_name": strategy_name,
+        "strategy_label": strategy_label,
+        "metrics": _empty_metric_summary(),
+        "train_metrics": None,
+        "predictions": [],
+        "feature_effects": [],
+        "tree_structure": None,
+        "notes": notes,
     }
 
 
@@ -952,6 +999,7 @@ def compute_temporal_ml_overview(
         return _empty_ml_response(target_present=True, warnings=warnings)
 
     regression_runs: list[dict[str, Any]] = []
+    unavailable_model_results: list[dict[str, Any]] = []
     preprocessing_benchmarks: list[dict[str, Any]] = [
         {
             "model_name": "Global Median",
@@ -965,9 +1013,29 @@ def compute_temporal_ml_overview(
 
     for spec in _regression_model_specs():
         if spec.builder is None:
-            warnings.append(_dependency_warning(spec))
+            warning = _dependency_warning(spec)
+            warnings.append(warning)
+            notes = [warning["message"], warning["suggestion"]]
+            preprocessing_benchmarks.append(
+                _unavailable_benchmark_row(
+                    spec,
+                    strategy_name="unavailable",
+                    strategy_label="No disponible",
+                    notes=notes,
+                )
+            )
+            unavailable_model_results.append(
+                _unavailable_model_result(
+                    spec,
+                    strategy_name="unavailable",
+                    strategy_label="No disponible",
+                    notes=notes,
+                )
+            )
             continue
 
+        model_succeeded = False
+        model_failures: list[str] = []
         for strategy_name in ("raw", "log1p", "log1p_outlier_norm", "winsor_iqr"):
             transformed_target, strategy_metadata = _prepare_target(strategy_name, train_target)
             notes: list[str] = []
@@ -1011,6 +1079,7 @@ def compute_temporal_ml_overview(
                     result["tree_structure"] = _extract_tree_structure(fitted_regressor, feature_names)
 
                 regression_runs.append(result)
+                model_succeeded = True
                 preprocessing_benchmarks.append(
                     {
                         "model_name": spec.name,
@@ -1028,9 +1097,29 @@ def compute_temporal_ml_overview(
                         "severity": "warning",
                         "column": None,
                         "message": f"{spec.name} with {STRATEGY_LABELS[strategy_name]} failed during training.",
-                        "suggestion": str(exc),
-                    }
+                            "suggestion": str(exc),
+                        }
+                    )
+                model_failures.append(f"{STRATEGY_LABELS[strategy_name]}: {exc}")
+
+        if not model_succeeded:
+            notes = ["Ninguna estrategia completó entrenamiento para este modelo."] + model_failures[:3]
+            preprocessing_benchmarks.append(
+                _unavailable_benchmark_row(
+                    spec,
+                    strategy_name="failed",
+                    strategy_label="Sin resultado",
+                    notes=notes,
                 )
+            )
+            unavailable_model_results.append(
+                _unavailable_model_result(
+                    spec,
+                    strategy_name="failed",
+                    strategy_label="Sin resultado",
+                    notes=notes,
+                )
+            )
 
     heuristic_models: list[dict[str, Any]] = []
     segment_artifacts: dict[str, dict[str, Any]] = {}
@@ -1234,6 +1323,16 @@ def compute_temporal_ml_overview(
         target_transformation_diagnostics=target_transformation_diagnostics,
     )
 
+    model_results = _top_level_model_results(regression_runs) + unavailable_model_results
+    model_results = sorted(
+        model_results,
+        key=lambda item: (
+            item["metrics"].get("mae") is None,
+            float(item["metrics"]["mae"]) if item["metrics"].get("mae") is not None else float("inf"),
+            item["model_name"],
+        ),
+    )
+
     return {
         "target_present": True,
         "model_built": bool(regression_runs or heuristic_models),
@@ -1247,7 +1346,7 @@ def compute_temporal_ml_overview(
         "feature_columns": numeric_features + categorical_features,
         "numeric_features": numeric_features,
         "categorical_features": categorical_features,
-        "models": _top_level_model_results(regression_runs),
+        "models": model_results,
         "warnings": warnings,
         "preprocessing_benchmarks": preprocessing_benchmarks,
         "segment_reports": segment_reports,

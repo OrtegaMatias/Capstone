@@ -6,18 +6,21 @@ import {
   fetchWeekConfig,
   fetchWeekClustering,
   fetchWeekEDA,
-  fetchWeekMlOverview,
+  fetchWeekMlCached,
   fetchWeekNotes,
   fetchWeekPreview,
   fetchWeekReport,
+  getApiBaseUrl,
   refreshWeekReport,
   saveWeekNotes,
 } from '../api/client';
+import type { MlEvaluationSummary } from '../api/types';
 import ArtifactList from '../components/ArtifactList';
 import AnovaTable from '../components/AnovaTable';
 import BoxplotPanel from '../components/BoxplotPanel';
 import DataTable from '../components/DataTable';
 import MetricCards from '../components/MetricCards';
+import MlClassificationPanel from '../components/MlClassificationPanel';
 import MlOverviewPanel from '../components/MlOverviewPanel';
 import MultipleRegressionPanel from '../components/MultipleRegressionPanel';
 import NotesPanel from '../components/NotesPanel';
@@ -31,6 +34,10 @@ export default function WeekPage() {
   const isWeek1 = weekId === 'week-1';
   const pageRef = useRef<HTMLElement>(null);
   const [pdfStatus, setPdfStatus] = useState<string | null>(null);
+  const [mlData, setMlData] = useState<MlEvaluationSummary | null>(null);
+  const [mlRunning, setMlRunning] = useState(false);
+  const [mlProgress, setMlProgress] = useState<{ current: number; total: number; message: string } | null>(null);
+  const [mlError, setMlError] = useState<string | null>(null);
 
   const handleDownloadPdf = async () => {
     if (!pageRef.current) return;
@@ -67,11 +74,87 @@ export default function WeekPage() {
     enabled: !!weekId && (isWeek1 || !!weekQuery.data?.analysis_available.includes('eda')),
   });
 
-  const mlQuery = useQuery({
-    queryKey: ['week-ml', weekId],
-    queryFn: () => fetchWeekMlOverview(weekId as string),
+  const mlCachedQuery = useQuery({
+    queryKey: ['week-ml-cached', weekId],
+    queryFn: () => fetchWeekMlCached(weekId as string),
     enabled: !!weekId && !!weekQuery.data?.analysis_available.includes('ml_overview'),
   });
+
+  useEffect(() => {
+    if (mlCachedQuery.data) {
+      setMlData(mlCachedQuery.data);
+    }
+  }, [mlCachedQuery.data]);
+
+  const handleRunMl = () => {
+    if (mlRunning || !weekId) return;
+    setMlRunning(true);
+    setMlProgress(null);
+    setMlError(null);
+
+    const baseUrl = getApiBaseUrl();
+    const url = `${baseUrl}/weeks/${weekId}/ml/run`;
+
+    fetch(url, { method: 'POST' }).then((response) => {
+      if (!response.ok || !response.body) {
+        setMlError('Error al conectar con el servidor');
+        setMlRunning(false);
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      const processChunk = ({ done, value }: ReadableStreamReadResult<Uint8Array>): Promise<void> | void => {
+        if (done) {
+          setMlRunning(false);
+          return;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() ?? '';
+
+        for (const part of parts) {
+          if (!part.trim()) continue;
+          const lines = part.split('\n');
+          let eventType = 'message';
+          let data = '';
+          for (const line of lines) {
+            if (line.startsWith('event: ')) eventType = line.slice(7);
+            else if (line.startsWith('data: ')) data = line.slice(6);
+          }
+          if (eventType === 'done' && data) {
+            try {
+              const payload = JSON.parse(data) as MlEvaluationSummary;
+              setMlData(payload);
+              setMlProgress(null);
+            } catch { /* ignore parse errors */ }
+            setMlRunning(false);
+            return;
+          } else if (eventType === 'error' && data) {
+            try {
+              const err = JSON.parse(data) as { detail: string };
+              setMlError(err.detail);
+            } catch { /* ignore parse errors */ }
+            setMlRunning(false);
+            return;
+          } else if (data) {
+            try {
+              const progress = JSON.parse(data) as { current: number; total: number; message: string };
+              setMlProgress(progress);
+            } catch { /* ignore parse errors */ }
+          }
+        }
+        return reader.read().then(processChunk);
+      };
+
+      reader.read().then(processChunk);
+    }).catch(() => {
+      setMlError('Error de conexión');
+      setMlRunning(false);
+    });
+  };
 
   const clusteringQuery = useQuery({
     queryKey: ['week-clustering', weekId],
@@ -212,18 +295,79 @@ export default function WeekPage() {
         </section>
       ) : null}
 
-      {week.analysis_available.includes('ml_overview') && mlQuery.data ? (
-        <section className="stack">
-          <MlOverviewPanel payload={mlQuery.data} />
-          <div className="panel">
-            <h3>Resumen supervisado</h3>
-            <MetricCards metrics={mlQuery.data.supervised_overview.target_stats} />
-          </div>
-          <WarningChips warnings={mlQuery.data.supervised_overview.warnings} />
-          <AnovaTable rows={mlQuery.data.anova.rows} />
-          <BoxplotPanel series={mlQuery.data.anova.boxplot_data} />
-          <MultipleRegressionPanel payload={mlQuery.data.multiple_regression} />
-        </section>
+      {week.analysis_available.includes('ml_overview') ? (
+        mlData ? (
+          <section className="stack">
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '-8px' }}>
+              <button
+                type="button"
+                className="outline-btn"
+                style={{ fontSize: '0.8rem', padding: '6px 12px', background: '#dfe8ec', color: 'var(--ink)' }}
+                onClick={handleRunMl}
+                disabled={mlRunning}
+              >
+                {mlRunning ? 'Recalculando...' : 'Recalcular'}
+              </button>
+            </div>
+            {mlRunning && mlProgress ? (
+              <div className="panel">
+                <div className="ml-progress-bar">
+                  <div
+                    className="ml-progress-fill"
+                    style={{ width: `${Math.round((mlProgress.current / mlProgress.total) * 100)}%` }}
+                  />
+                </div>
+                <p className="muted" style={{ margin: '8px 0 0', fontSize: '0.85rem' }}>
+                  {Math.round((mlProgress.current / mlProgress.total) * 100)}% ({mlProgress.current}/{mlProgress.total}) — {mlProgress.message}
+                </p>
+              </div>
+            ) : null}
+            {mlData.priority_classification ? (
+              <MlClassificationPanel classification={mlData.priority_classification} />
+            ) : null}
+            <details className="panel">
+              <summary><h3 style={{ display: 'inline' }}>Analisis de regresion (comparacion)</h3></summary>
+              <MlOverviewPanel payload={mlData} />
+              <div className="panel">
+                <h3>Resumen supervisado</h3>
+                <MetricCards metrics={mlData.supervised_overview.target_stats} />
+              </div>
+              <WarningChips warnings={mlData.supervised_overview.warnings} />
+              <AnovaTable rows={mlData.anova.rows} />
+              <BoxplotPanel series={mlData.anova.boxplot_data} />
+              <MultipleRegressionPanel payload={mlData.multiple_regression} />
+            </details>
+          </section>
+        ) : (
+          <section className="panel">
+            <h3>Análisis ML</h3>
+            {mlRunning && mlProgress ? (
+              <>
+                <div className="ml-progress-bar">
+                  <div
+                    className="ml-progress-fill"
+                    style={{ width: `${Math.round((mlProgress.current / mlProgress.total) * 100)}%` }}
+                  />
+                </div>
+                <p className="muted" style={{ margin: '8px 0 0', fontSize: '0.85rem' }}>
+                  {Math.round((mlProgress.current / mlProgress.total) * 100)}% ({mlProgress.current}/{mlProgress.total}) — {mlProgress.message}
+                </p>
+              </>
+            ) : mlRunning ? (
+              <p className="muted">Iniciando análisis...</p>
+            ) : (
+              <>
+                {mlError ? <p className="error" style={{ marginBottom: '8px' }}>{mlError}</p> : null}
+                <button type="button" onClick={handleRunMl} disabled={mlRunning}>
+                  Ejecutar análisis ML
+                </button>
+                <p className="muted" style={{ margin: '8px 0 0', fontSize: '0.85rem' }}>
+                  Entrena 5 modelos × 3 estrategias sobre el dataset temporal.
+                </p>
+              </>
+            )}
+          </section>
+        )
       ) : null}
 
       {week.status === 'scaffolded' ? (
@@ -270,7 +414,7 @@ export default function WeekPage() {
         </div>
       )}
 
-      {(weekQuery.isError || previewQuery.isError || edaQuery.isError || clusteringQuery.isError || mlQuery.isError || notesQuery.isError || reportQuery.isError) ? (
+      {(weekQuery.isError || previewQuery.isError || edaQuery.isError || clusteringQuery.isError || mlCachedQuery.isError || notesQuery.isError || reportQuery.isError) ? (
         <p className="error">Hubo un error cargando la semana. Revisa backend, manifest y seeds.</p>
       ) : null}
     </main>

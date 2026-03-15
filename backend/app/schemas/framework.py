@@ -76,6 +76,8 @@ class MlMetricSummary(BaseModel):
     r2: float | None = None
     medae: float | None = None
     baseline_mae: float | None = None
+    msle: float | None = None
+    mape: float | None = None
 
 
 class MlPredictionSample(BaseModel):
@@ -143,6 +145,7 @@ class HeuristicModelResult(BaseModel):
     metrics: MlMetricSummary
     predictions: list[MlPredictionSample]
     tier_usage: list[MlTierUsage]
+    segment_medians: list[SegmentMedianEntry] = []
 
 
 class StrategyComparisonEntry(BaseModel):
@@ -161,11 +164,10 @@ class StrategyComparison(BaseModel):
     narrative: str
 
 
-class LearningSection(BaseModel):
-    slug: str
-    title: str
-    summary: str
-    bullets: list[str]
+class SegmentMedianEntry(BaseModel):
+    segment: str
+    median: float
+    count: int
 
 
 class TargetTransformationStats(BaseModel):
@@ -199,6 +201,55 @@ class TargetTransformationDiagnostics(BaseModel):
     steps: list[TargetTransformationStep]
 
 
+class PriorityBand(BaseModel):
+    label: str
+    min_days: int
+    max_days: int
+    count_train: int
+    count_test: int
+
+
+class ClassificationPerClass(BaseModel):
+    band: str
+    precision: float
+    recall: float
+    f1: float
+    support: int
+
+
+class ClassificationModelResult(BaseModel):
+    model_name: str
+    accuracy: float
+    adjacent_accuracy: float
+    band_mae: float
+    f1_weighted: float
+    per_class: list[ClassificationPerClass]
+    confusion_matrix: list[list[int]]
+    available: bool = True
+    notes: list[str] = []
+
+
+class MethodologyStep(BaseModel):
+    step: int
+    title: str
+    rationale: str
+    decision: str
+    evidence: str | None = None
+
+
+class PriorityClassificationResult(BaseModel):
+    bands: list[PriorityBand]
+    band_distribution: dict[str, dict[str, int]]
+    models: list[ClassificationModelResult]
+    best_model: str
+    baseline_accuracy: float
+    narrative: str
+    methodology: list[MethodologyStep] = []
+    feature_names: list[str] = []
+    priority_score_corr: float | None = None
+    priority_score_stats: dict[str, float] = {}
+
+
 class MlEvaluationSummary(BaseModel):
     week_id: str
     stage_name: str
@@ -215,8 +266,8 @@ class MlEvaluationSummary(BaseModel):
     segment_reports: list[MlSegmentReport]
     heuristic_models: list[HeuristicModelResult]
     strategy_comparison: StrategyComparison | None = None
-    learning_sections: list[LearningSection]
     target_transformation_diagnostics: TargetTransformationDiagnostics | None = None
+    priority_classification: PriorityClassificationResult | None = None
     supervised_overview: SupervisedOverviewResponse
     anova: AnovaResponse
     multiple_regression: MultipleRegressionResponse

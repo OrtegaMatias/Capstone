@@ -6,17 +6,6 @@ export type WarningItem = {
   suggestion?: string | null;
 };
 
-export type UploadResponse = {
-  dataset_id: string;
-  has_in: boolean;
-  has_out: boolean;
-  has_target: boolean;
-  schema: Record<string, string[]>;
-  preview: Array<Record<string, unknown>>;
-  dtype_summary: Record<string, string>;
-  warnings: WarningItem[];
-};
-
 export type PreviewResponse = {
   columns: string[];
   rows: Array<Record<string, unknown>>;
@@ -407,22 +396,6 @@ export type WeekClusteringResponse = {
   warnings: WarningItem[];
 };
 
-export type VariabilityRow = {
-  column: string;
-  dtype_group: string;
-  entropy: number | null;
-  gini_impurity: number | null;
-  coefficient_variation: number | null;
-  custom_index: number | null;
-  custom_mode: string;
-  recommendation: string;
-  warnings: WarningItem[];
-};
-
-export type VariabilityResponse = {
-  rows: VariabilityRow[];
-};
-
 export type SupervisedOverviewResponse = {
   target_present: boolean;
   target_stats: Record<string, number | null>;
@@ -504,97 +477,6 @@ export type NotesResponse = {
 export type NotesSaveResponse = {
   ok: boolean;
   updated_at: string;
-};
-
-export type PivotSourceItem = {
-  source: 'in' | 'out';
-  available: boolean;
-};
-
-export type PivotSourcesResponse = {
-  sources: PivotSourceItem[];
-};
-
-export type PivotMetadataDefaults = {
-  row_dim: string;
-  col_dim: string;
-  value_field: string;
-  agg_func: PivotAggFunc;
-  include_blank: boolean;
-  top_k: number;
-  small_n_threshold: number;
-};
-
-export type PivotAggFunc =
-  | 'count'
-  | 'sum'
-  | 'mean'
-  | 'median'
-  | 'rate_gt_7'
-  | 'rate_gt_14'
-  | 'rate_gt_30';
-
-export type PivotMetadataResponse = {
-  source: 'in' | 'out';
-  dimensions: string[];
-  value_fields: string[];
-  agg_functions: PivotAggFunc[];
-  field_agg_functions: Record<string, PivotAggFunc[]>;
-  filter_options: Record<string, string[]>;
-  defaults: PivotMetadataDefaults;
-  warnings: WarningItem[];
-};
-
-export type PivotQueryRequest = {
-  source: 'in' | 'out';
-  row_dim: string;
-  col_dim: string;
-  value_field: string;
-  agg_func: PivotAggFunc;
-  filters?: Record<string, string[]>;
-  include_blank?: boolean;
-  top_k?: number;
-  small_n_threshold?: number;
-};
-
-export type PivotCell = {
-  col_key: string;
-  value: number | null;
-  count: number;
-  low_sample: boolean;
-};
-
-export type PivotRow = {
-  row_key: string;
-  cells: PivotCell[];
-  row_total: {
-    value: number | null;
-    count: number;
-  };
-};
-
-export type PivotColumnTotal = {
-  col_key: string;
-  value: number | null;
-  count: number;
-};
-
-export type PivotQueryResponse = {
-  source: 'in' | 'out';
-  row_dim: string;
-  col_dim: string;
-  value_field: string;
-  agg_func: PivotAggFunc;
-  matrix: {
-    columns: string[];
-    rows: PivotRow[];
-    column_totals: PivotColumnTotal[];
-    grand_total: {
-      value: number | null;
-      count: number;
-    };
-  };
-  warnings: WarningItem[];
 };
 
 export type WeekStatus = 'active' | 'scaffolded';
@@ -731,6 +613,12 @@ export type MlTierUsage = {
   count: number;
 };
 
+export type SegmentMedianEntry = {
+  segment: string;
+  median: number;
+  count: number;
+};
+
 export type HeuristicModelResult = {
   model_name: string;
   family_key: string;
@@ -740,6 +628,7 @@ export type HeuristicModelResult = {
   metrics: MlMetricSummary;
   predictions: MlPredictionSample[];
   tier_usage: MlTierUsage[];
+  segment_medians?: SegmentMedianEntry[];
 };
 
 export type StrategyComparisonEntry = {
@@ -756,13 +645,6 @@ export type StrategyComparison = {
   best_regression: StrategyComparisonEntry;
   best_heuristic: StrategyComparisonEntry;
   narrative: string;
-};
-
-export type LearningSection = {
-  slug: string;
-  title: string;
-  summary: string;
-  bullets: string[];
 };
 
 export type TargetTransformationStats = {
@@ -796,6 +678,55 @@ export type TargetTransformationDiagnostics = {
   steps: TargetTransformationStep[];
 };
 
+export type PriorityBand = {
+  label: string;
+  min_days: number;
+  max_days: number;
+  count_train: number;
+  count_test: number;
+};
+
+export type ClassificationPerClass = {
+  band: string;
+  precision: number;
+  recall: number;
+  f1: number;
+  support: number;
+};
+
+export type ClassificationModelResult = {
+  model_name: string;
+  accuracy: number;
+  adjacent_accuracy: number;
+  band_mae: number;
+  f1_weighted: number;
+  per_class: ClassificationPerClass[];
+  confusion_matrix: number[][];
+  available: boolean;
+  notes: string[];
+};
+
+export type MethodologyStep = {
+  step: number;
+  title: string;
+  rationale: string;
+  decision: string;
+  evidence?: string | null;
+};
+
+export type PriorityClassificationResult = {
+  bands: PriorityBand[];
+  band_distribution: Record<string, Record<string, number>>;
+  models: ClassificationModelResult[];
+  best_model: string;
+  baseline_accuracy: number;
+  narrative: string;
+  methodology?: MethodologyStep[];
+  feature_names?: string[];
+  priority_score_corr?: number | null;
+  priority_score_stats?: Record<string, number>;
+};
+
 export type MlEvaluationSummary = {
   week_id: string;
   stage_name: string;
@@ -812,8 +743,8 @@ export type MlEvaluationSummary = {
   segment_reports: MlSegmentReport[];
   heuristic_models: HeuristicModelResult[];
   strategy_comparison?: StrategyComparison | null;
-  learning_sections: LearningSection[];
   target_transformation_diagnostics?: TargetTransformationDiagnostics | null;
+  priority_classification?: PriorityClassificationResult | null;
   supervised_overview: SupervisedOverviewResponse;
   anova: AnovaResponse;
   multiple_regression: MultipleRegressionResponse;

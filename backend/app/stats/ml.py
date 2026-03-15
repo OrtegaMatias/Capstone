@@ -46,24 +46,23 @@ WEEK_COL = "week"
 REPRESENTATIVE_TRAIN_MIN = 100
 REPRESENTATIVE_TEST_MIN = 30
 
-SIMPLE_SEGMENT_SPECS: list[tuple[tuple[str, ...], str, str]] = [
-    (("Type",), "type", "Type"),
-    (("Quality",), "quality", "Quality"),
-    (("Owner",), "owner", "Owner"),
-    (("Size",), "size", "Size"),
+SIMPLE_SEGMENT_SPECS: list[tuple[tuple[str, ...], str, str, str]] = [
+    (("Type",), "type", "Type", "Mediana por Tipo de contenedor"),
+    (("Quality",), "quality", "Quality", "Mediana por Calidad"),
+    (("Owner",), "owner", "Owner", "Mediana por Propietario"),
+    (("Size",), "size", "Size", "Mediana por Tamaño"),
 ]
 
-COMBO_SEGMENT_SPECS: list[tuple[tuple[str, ...], str, str]] = [
-    (("Type", "Quality"), "type_quality", "Type x Quality"),
-    (("Owner", "Size"), "owner_size", "Owner x Size"),
-    (("Owner", "Type"), "owner_type", "Owner x Type"),
+COMBO_SEGMENT_SPECS: list[tuple[tuple[str, ...], str, str, str]] = [
+    (("Type", "Quality"), "type_quality", "Type x Quality", "Mediana por Tipo x Calidad"),
+    (("Owner", "Size"), "owner_size", "Owner x Size", "Mediana por Propietario x Tamaño"),
+    (("Owner", "Type"), "owner_type", "Owner x Type", "Mediana por Propietario x Tipo"),
 ]
 
 STRATEGY_LABELS = {
     "raw": "Raw target",
     "log1p": "Log1p target",
-    "log1p_outlier_norm": "Log1p + outlier normalization",
-    "winsor_iqr": "Winsor IQR",
+    "log1p_drop_outliers": "Log1p + winsorizado",
     "baseline": "Baseline",
 }
 
@@ -150,7 +149,6 @@ def _empty_ml_response(*, warnings: list[dict[str, Any]], target_present: bool) 
         "segment_reports": [],
         "heuristic_models": [],
         "strategy_comparison": None,
-        "learning_sections": [],
         "target_transformation_diagnostics": None,
     }
 
@@ -171,12 +169,25 @@ def _metric_summary(actual: np.ndarray, predicted: np.ndarray, baseline_predicti
     medae = median_absolute_error(actual, predicted)
     r2 = float(r2_score(actual, predicted)) if len(actual) > 1 else None
     baseline_mae = mean_absolute_error(actual, baseline_prediction)
+
+    safe_actual = np.clip(actual, 0, None)
+    safe_predicted = np.clip(predicted, 0, None)
+    msle = float(np.mean((np.log1p(safe_actual) - np.log1p(safe_predicted)) ** 2))
+
+    nonzero_mask = actual > 0
+    if nonzero_mask.sum() > 0:
+        mape = float(np.mean(np.abs((actual[nonzero_mask] - predicted[nonzero_mask]) / actual[nonzero_mask])))
+    else:
+        mape = None
+
     return {
         "mae": float(mae),
         "rmse": rmse,
         "r2": r2,
         "medae": float(medae),
         "baseline_mae": float(baseline_mae),
+        "msle": msle,
+        "mape": mape,
     }
 
 
@@ -187,6 +198,8 @@ def _empty_metric_summary() -> dict[str, Any]:
         "r2": None,
         "medae": None,
         "baseline_mae": None,
+        "msle": None,
+        "mape": None,
     }
 
 
@@ -256,10 +269,12 @@ def _build_target_transformation_diagnostics(train_target: np.ndarray) -> dict[s
     log_values = np.log1p(np.clip(raw_values, a_min=0.0, a_max=None))
     log_lower, log_upper = _iqr_bounds(log_values)
     if log_lower is None or log_upper is None:
-        log_norm_values = log_values.copy()
+        log_winsorized_values = log_values.copy()
+        clipped_count = 0
     else:
-        log_norm_values = np.clip(log_values, a_min=log_lower, a_max=log_upper)
-    restored_values = np.expm1(log_norm_values)
+        outlier_mask = (log_values < log_lower) | (log_values > log_upper)
+        clipped_count = int(outlier_mask.sum())
+        log_winsorized_values = np.clip(log_values, log_lower, log_upper)
 
     steps = [
         {
@@ -274,26 +289,20 @@ def _build_target_transformation_diagnostics(train_target: np.ndarray) -> dict[s
             "step_label": "Log1p target",
             "scale": "log",
             "stats": _boxplot_stats(log_values),
-            "notes": ["Compresión logarítmica del target antes de cualquier normalización residual."],
+            "notes": ["Compresión logarítmica del target."],
         },
         {
-            "step_key": "log1p_outlier_norm",
-            "step_label": "Log1p + outlier normalization",
+            "step_key": "log1p_drop_outliers",
+            "step_label": "Log1p + winsorizado",
             "scale": "log",
-            "stats": _boxplot_stats(log_norm_values),
+            "stats": _boxplot_stats(log_winsorized_values),
             "notes": [
                 (
-                    "Se aplica capping IQR sobre la escala logarítmica para normalizar outliers "
-                    "que sobreviven después de log1p."
+                    f"Se winsorizaron {clipped_count} valores outlier al rango IQR en escala "
+                    f"logarítmica ({clipped_count / max(len(log_values), 1) * 100:.1f}%). "
+                    "Los valores extremos se recortan a los límites, sin eliminar filas."
                 )
             ],
-        },
-        {
-            "step_key": "log1p_outlier_norm_restored",
-            "step_label": "Log1p + outlier normalization (restored days)",
-            "scale": "days",
-            "stats": _boxplot_stats(restored_values),
-            "notes": ["La misma transformación reexpresada en días para comparar antes/después en escala original."],
         },
     ]
 
@@ -301,17 +310,17 @@ def _build_target_transformation_diagnostics(train_target: np.ndarray) -> dict[s
         "scope": "train_only",
         "boxplot_data": [
             {
-                "feature": "Escala original (antes vs después)",
+                "feature": "Escala original vs log",
                 "groups": [
                     {"group": "Raw target", "values": raw_values.tolist()},
-                    {"group": "Log1p + norm (restored days)", "values": restored_values.tolist()},
+                    {"group": "Log1p target", "values": log_values.tolist()},
                 ],
             },
             {
-                "feature": "Espacio logarítmico",
+                "feature": "Log1p: todos vs winsorizado",
                 "groups": [
                     {"group": "Log1p target", "values": log_values.tolist()},
-                    {"group": "Log1p + outlier normalization", "values": log_norm_values.tolist()},
+                    {"group": "Log1p + winsorizado", "values": log_winsorized_values.tolist()},
                 ],
             },
         ],
@@ -389,19 +398,25 @@ def _unavailable_model_result(
     }
 
 
-def _regression_model_specs() -> list[ModelSpec]:
+def _regression_model_specs(strategy_name: str = "raw") -> list[ModelSpec]:
+    use_mae = strategy_name in {"log1p", "log1p_drop_outliers"}
+    tree_criterion = "absolute_error" if use_mae else "squared_error"
+
     specs = [
         ModelSpec(
             name="Decision Tree",
-            builder=lambda: DecisionTreeRegressor(max_depth=5, random_state=42),
+            builder=lambda _crit=tree_criterion: DecisionTreeRegressor(
+                max_depth=5, random_state=42, criterion=_crit,
+            ),
         ),
         ModelSpec(
             name="Random Forest",
-            builder=lambda: RandomForestRegressor(
+            builder=lambda _crit=tree_criterion: RandomForestRegressor(
                 n_estimators=100,
                 max_depth=5,
                 random_state=42,
                 n_jobs=-1,
+                criterion=_crit,
             ),
         ),
         ModelSpec(
@@ -409,12 +424,13 @@ def _regression_model_specs() -> list[ModelSpec]:
             builder=(
                 None
                 if CatBoostRegressor is None
-                else lambda: CatBoostRegressor(
+                else lambda _mae=use_mae: CatBoostRegressor(
                     iterations=100,
                     depth=5,
                     random_seed=42,
                     verbose=False,
                     allow_writing_files=False,
+                    loss_function="MAE" if _mae else "RMSE",
                 )
             ),
             dependency_name="catboost",
@@ -425,13 +441,13 @@ def _regression_model_specs() -> list[ModelSpec]:
             builder=(
                 None
                 if XGBRegressor is None
-                else lambda: XGBRegressor(
+                else lambda _mae=use_mae: XGBRegressor(
                     n_estimators=150,
                     max_depth=5,
                     learning_rate=0.08,
                     subsample=0.9,
                     colsample_bytree=0.9,
-                    objective="reg:squarederror",
+                    objective="reg:absoluteerror" if _mae else "reg:squarederror",
                     random_state=42,
                     n_jobs=1,
                     verbosity=0,
@@ -445,12 +461,13 @@ def _regression_model_specs() -> list[ModelSpec]:
             builder=(
                 None
                 if LGBMRegressor is None
-                else lambda: LGBMRegressor(
+                else lambda _mae=use_mae: LGBMRegressor(
                     n_estimators=150,
                     learning_rate=0.08,
                     max_depth=5,
                     random_state=42,
                     verbose=-1,
+                    objective="regression_l1" if _mae else "regression",
                 )
             ),
             dependency_name="lightgbm",
@@ -524,37 +541,38 @@ def _build_preprocessor(
     )
 
 
-def _prepare_target(strategy_name: str, train_target: np.ndarray) -> tuple[np.ndarray, dict[str, Any]]:
+def _prepare_target(strategy_name: str, train_target: np.ndarray) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
+    n = len(train_target)
     metadata: dict[str, Any] = {"strategy_name": strategy_name}
+    mask_all = np.ones(n, dtype=bool)
+
     if strategy_name == "raw":
-        return train_target.copy(), metadata
+        return train_target.copy(), mask_all, metadata
 
     if strategy_name == "log1p":
-        return np.log1p(np.clip(train_target, a_min=0.0, a_max=None)), metadata
+        return np.log1p(np.clip(train_target, a_min=0.0, a_max=None)), mask_all, metadata
 
-    if strategy_name == "log1p_outlier_norm":
+    if strategy_name == "log1p_drop_outliers":
         logged_target = np.log1p(np.clip(train_target, a_min=0.0, a_max=None))
         lower, upper = _iqr_bounds(logged_target)
-        metadata.update({"lower_bound": lower, "upper_bound": upper, "normalized_after": "log1p"})
-        if lower is None or upper is None:
-            return logged_target, metadata
-        return np.clip(logged_target, a_min=lower, a_max=upper), metadata
-
-    if strategy_name == "winsor_iqr":
-        q1 = float(np.quantile(train_target, 0.25))
-        q3 = float(np.quantile(train_target, 0.75))
-        iqr = q3 - q1
-        lower = q1 - 1.5 * iqr
-        upper = q3 + 1.5 * iqr
         metadata.update({"lower_bound": lower, "upper_bound": upper})
-        return np.clip(train_target, a_min=lower, a_max=upper), metadata
+        if lower is None or upper is None:
+            return logged_target, mask_all, metadata
+        outlier_mask = (logged_target < lower) | (logged_target > upper)
+        clipped_count = int(outlier_mask.sum())
+        metadata.update({
+            "clipped_count": clipped_count,
+            "clipped_ratio": float(clipped_count / n) if n > 0 else 0.0,
+        })
+        winsorized = np.clip(logged_target, lower, upper)
+        return winsorized, mask_all, metadata
 
     raise ValueError(f"Unknown target strategy '{strategy_name}'")
 
 
 def _restore_predictions(strategy_name: str, predictions: np.ndarray) -> np.ndarray:
     restored = predictions.copy()
-    if strategy_name in {"log1p", "log1p_outlier_norm"}:
+    if strategy_name in {"log1p", "log1p_drop_outliers"}:
         restored = np.expm1(restored)
     return np.clip(restored, a_min=0.0, a_max=None)
 
@@ -655,15 +673,24 @@ def _build_segment_heuristic(
     train_predictions = grouped_train.map(lambda label: float(medians.get(str(label), baseline_prediction))).to_numpy(dtype=float)
     test_predictions = grouped_test.map(lambda label: float(medians.get(str(label), baseline_prediction))).to_numpy(dtype=float)
 
+    segment_medians = [
+        {"segment": str(seg), "median": float(med), "count": int(train_with_target[train_with_target["_segment_label"] == seg].shape[0])}
+        for seg, med in sorted(medians.items(), key=lambda item: item[0])
+    ]
+
     payload = {
         "model_name": name,
         "family_key": family_key,
         "family_label": family_label,
-        "rule_summary": f"Predice la mediana historica por {family_label} y agrupa segmentos no representativos en Other.",
+        "rule_summary": (
+            f"En lugar de un modelo complejo, se predice la mediana histórica de DaysInDeposit "
+            f"por segmento de {family_label}. Segmentos con pocas observaciones se agrupan como 'Otros'."
+        ),
         "train_metrics": _metric_summary(train_target, train_predictions, np.full_like(train_target, baseline_prediction)),
         "metrics": _metric_summary(test_target, test_predictions, baseline_test_vector),
         "predictions": _prediction_rows(test_df, test_target, test_predictions, WEEK_COL),
         "tier_usage": [{"source": family_label, "count": int(len(test_predictions))}],
+        "segment_medians": segment_medians,
     }
     return payload, grouped_train, grouped_test, medians
 
@@ -737,132 +764,19 @@ def _comparison_entry(result: dict[str, Any], *, include_strategy: bool) -> dict
     return payload
 
 
-def _learning_sections(
-    *,
-    train_target: np.ndarray,
-    full_target: pd.Series,
-    warnings: list[dict[str, Any]],
-    best_regression: dict[str, Any] | None,
-    best_heuristic: dict[str, Any] | None,
-    target_transformation_diagnostics: dict[str, Any] | None,
-) -> list[dict[str, Any]]:
-    mean_value = float(np.mean(full_target))
-    median_value = float(np.median(full_target))
-    skew_value = float(full_target.skew()) if len(full_target) > 2 else 0.0
-    q1 = float(full_target.quantile(0.25))
-    q3 = float(full_target.quantile(0.75))
-    iqr = q3 - q1
-    upper = q3 + 1.5 * iqr
-    outlier_ratio = float((full_target > upper).mean()) if not np.isclose(iqr, 0.0) else 0.0
-
-    boosting_status = []
-    dependency_warnings = [warning for warning in warnings if warning["code"].endswith("_unavailable")]
-    if dependency_warnings:
-        boosting_status.extend(
-            [
-                "Los boosting externos quedaron preparados como dependencias opcionales.",
-                "Si faltan librerías, el benchmark sigue respondiendo y reporta la ausencia como warning.",
-            ]
-        )
-    else:
-        boosting_status.append("Los boosting externos quedaron disponibles dentro del benchmark de semana 2.")
-
-    comparison_bullets = []
-    if best_regression is not None:
-        comparison_bullets.append(
-            f"Mejor regresion: {best_regression['model_name']} con {best_regression.get('strategy_label', 'estrategia n/a')} (MAE={best_regression['metrics']['mae']:.2f})."
-        )
-    if best_heuristic is not None:
-        comparison_bullets.append(
-            f"Mejor heuristica: {best_heuristic['model_name']} (MAE={best_heuristic['metrics']['mae']:.2f})."
-        )
-    if not comparison_bullets:
-        comparison_bullets.append("No hubo suficientes modelos para comparar estrategias en esta ejecucion.")
-
-    diagnostics_by_step = {
-        step["step_key"]: step["stats"] for step in (target_transformation_diagnostics or {}).get("steps", [])
-    }
-    raw_stats = diagnostics_by_step.get("raw", {})
-    log_stats = diagnostics_by_step.get("log1p", {})
-    normalized_log_stats = diagnostics_by_step.get("log1p_outlier_norm", {})
-
-    return [
-        {
-            "slug": "asimetria-dwell-time",
-            "title": "Asimetria del dwell time",
-            "summary": "DaysInDeposit muestra cola larga y una diferencia grande entre media y mediana, por lo que conviene evitar lecturas basadas solo en el promedio.",
-            "bullets": [
-                f"Media={mean_value:.2f}, mediana={median_value:.2f}, skewness={skew_value:.2f}.",
-                "Cuando la cola es larga, RMSE y la media reaccionan fuerte a pocos casos extremos.",
-                "En estos escenarios el MedAE y las medianas segmentadas ayudan a leer estabilidad operativa.",
-            ],
-        },
-        {
-            "slug": "transformacion-log",
-            "title": "Transformacion logaritmica",
-            "summary": "La transformacion log1p comprime valores muy altos del target sin perder el orden de magnitud y luego revierte las predicciones a dias reales.",
-            "bullets": [
-                "Se entrena con log1p(target) y se evalua siempre en escala original para no distorsionar la comparacion.",
-                (
-                    f"En train, la skewness pasa de {raw_stats.get('skew', 0.0):.2f} a "
-                    f"{log_stats.get('skew', 0.0):.2f} después de log1p."
-                    if raw_stats and log_stats
-                    else "La escala logarítmica reduce la asimetría y compacta la cola alta."
-                ),
-                "Sirve cuando el costo de la cola domina el ajuste y hace inestable la regresion directa.",
-                "No reemplaza la interpretacion del negocio; solo cambia la geometria del aprendizaje.",
-            ],
-        },
-        {
-            "slug": "outliers",
-            "title": "Outliers y normalizacion residual",
-            "summary": "Los outliers no se eliminan por defecto; se comparan contra variantes robustas calculadas solo con train para evitar leakage temporal.",
-            "bullets": [
-                f"Con la regla IQR, aproximadamente {outlier_ratio:.2%} del target supera el limite superior de {upper:.2f} dias.",
-                "La winsorizacion ajusta el target de entrenamiento, pero no toca el holdout.",
-                (
-                    f"Después de log1p, la proporción residual de outliers pasa de {log_stats.get('outlier_ratio', 0.0):.2%} "
-                    f"a {normalized_log_stats.get('outlier_ratio', 0.0):.2%} tras la normalización residual."
-                    if log_stats and normalized_log_stats
-                    else "La normalización residual opera sobre la escala logarítmica para reducir extremos persistentes."
-                ),
-                "Esto permite medir si la robustez mejora sin borrar observaciones del fenomeno.",
-            ],
-        },
-        {
-            "slug": "boosting",
-            "title": "Boosting para benchmark",
-            "summary": "CatBoost, XGBoost y LightGBM entran como comparadores de arboles potenciados frente a baselines mas simples.",
-            "bullets": boosting_status,
-        },
-        {
-            "slug": "heuristicas-vs-regresiones",
-            "title": "Heuristicas vs regresiones",
-            "summary": "La comparacion no solo mide error: ayuda a decidir si el problema necesita una regla interpretable o un modelo mas flexible.",
-            "bullets": comparison_bullets
-            + [
-                "Las heuristicas por segmento sirven como benchmark interpretable y como puente hacia decisiones operativas.",
-                "Si una heuristica se acerca al mejor regressor, la complejidad adicional puede no justificar el costo.",
-            ],
-        },
-        {
-            "slug": "metaheuristicas",
-            "title": "Puente hacia heuristicas y metaheuristicas",
-            "summary": "Semana 2 no implementa un solver metaheuristico, pero deja insumos concretos para construir reglas, funciones objetivo y vecindarios en semanas posteriores.",
-            "bullets": [
-                "Los segmentos con mayor error pueden transformarse en penalizaciones o prioridades dentro de una futura funcion objetivo.",
-                "Las medianas por segmento ofrecen semillas interpretable para heuristicas constructivas.",
-                "Los boosters ayudan a detectar no linealidades que luego se pueden traducir a restricciones o scores de busqueda.",
-            ],
-        },
-    ]
-
-
 def compute_temporal_ml_overview(
     df: pd.DataFrame,
     target_col: str = TARGET_COL,
     week_col: str = WEEK_COL,
+    on_progress: Callable[[int, int, str], None] | None = None,
 ) -> dict[str, Any]:
+    # Total steps: 2 setup + 3 strategies × 5 models + 1 heuristics + 1 classification + 1 done = ~21
+    _total_steps = 21
+
+    def _progress(step: int, msg: str) -> None:
+        if on_progress is not None:
+            on_progress(step, _total_steps, msg)
+
     if target_col not in df.columns:
         return _empty_ml_response(
             target_present=False,
@@ -942,6 +856,8 @@ def compute_temporal_ml_overview(
         )
         return _empty_ml_response(target_present=True, warnings=warnings)
 
+    _progress(1, "Split temporal completado")
+
     train_target = train_df[target_col].to_numpy(dtype=float)
     test_target = test_df[target_col].to_numpy(dtype=float)
     baseline_prediction = float(np.median(train_target))
@@ -985,6 +901,7 @@ def compute_temporal_ml_overview(
         candidate_features,
     )
     warnings.extend(prep_warnings)
+    _progress(2, "Preprocessor construido")
 
     if preprocessor is None:
         warnings.append(
@@ -1011,7 +928,8 @@ def compute_temporal_ml_overview(
         }
     ]
 
-    for spec in _regression_model_specs():
+    # Report unavailable models once (strategy doesn't affect availability).
+    for spec in _regression_model_specs("raw"):
         if spec.builder is None:
             warning = _dependency_warning(spec)
             warnings.append(warning)
@@ -1032,31 +950,38 @@ def compute_temporal_ml_overview(
                     notes=notes,
                 )
             )
-            continue
 
-        model_succeeded = False
-        model_failures: list[str] = []
-        for strategy_name in ("raw", "log1p", "log1p_outlier_norm", "winsor_iqr"):
-            transformed_target, strategy_metadata = _prepare_target(strategy_name, train_target)
-            notes: list[str] = []
-            if strategy_name == "winsor_iqr":
-                notes.append(
-                    f"Límites train-only: [{strategy_metadata['lower_bound']:.2f}, {strategy_metadata['upper_bound']:.2f}]"
-                )
-            if strategy_name == "log1p":
-                notes.append("Predicciones revertidas a escala original con expm1.")
-            if strategy_name == "log1p_outlier_norm":
-                lower_bound = strategy_metadata.get("lower_bound")
-                upper_bound = strategy_metadata.get("upper_bound")
-                if lower_bound is not None and upper_bound is not None:
-                    notes.append(
-                        f"Normalización residual en escala log con límites train-only: [{lower_bound:.2f}, {upper_bound:.2f}]"
-                    )
-                notes.append("Predicciones revertidas a escala original con expm1.")
+    # Track per-model success across all strategies for failure reporting.
+    model_succeeded: dict[str, bool] = {}
+    model_failures: dict[str, list[str]] = {}
+    _step_counter = 2  # steps 1-2 already done (split + preprocessor)
+
+    for strategy_name in ("raw", "log1p", "log1p_drop_outliers"):
+        transformed_target, train_mask, strategy_metadata = _prepare_target(strategy_name, train_target)
+        strategy_notes: list[str] = []
+        if strategy_name == "log1p":
+            strategy_notes.append("Predicciones revertidas a escala original con expm1.")
+        if strategy_name == "log1p_drop_outliers":
+            clipped = strategy_metadata.get("clipped_count", 0)
+            clipped_ratio = strategy_metadata.get("clipped_ratio", 0.0)
+            strategy_notes.append(
+                f"Se winsorizaron {clipped} valores outlier del train ({clipped_ratio:.1%}) "
+                "al rango IQR en escala log. Predicciones revertidas con expm1."
+            )
+
+        for spec in _regression_model_specs(strategy_name):
+            if spec.builder is None:
+                _step_counter += 1
+                continue
+
+            model_succeeded.setdefault(spec.name, False)
+            model_failures.setdefault(spec.name, [])
+            notes = list(strategy_notes)
 
             try:
+                fit_features = train_features[train_mask] if not train_mask.all() else train_features
                 model = Pipeline([("preprocess", preprocessor), ("regressor", spec.builder())])
-                model.fit(train_features, transformed_target)
+                model.fit(fit_features, transformed_target)
 
                 predicted_test = _restore_predictions(strategy_name, model.predict(test_features))
                 predicted_train = _restore_predictions(strategy_name, model.predict(train_features))
@@ -1079,7 +1004,9 @@ def compute_temporal_ml_overview(
                     result["tree_structure"] = _extract_tree_structure(fitted_regressor, feature_names)
 
                 regression_runs.append(result)
-                model_succeeded = True
+                model_succeeded[spec.name] = True
+                _step_counter += 1
+                _progress(_step_counter, f"Entrenado {spec.name} · {STRATEGY_LABELS[strategy_name]}")
                 preprocessing_benchmarks.append(
                     {
                         "model_name": spec.name,
@@ -1097,13 +1024,17 @@ def compute_temporal_ml_overview(
                         "severity": "warning",
                         "column": None,
                         "message": f"{spec.name} with {STRATEGY_LABELS[strategy_name]} failed during training.",
-                            "suggestion": str(exc),
-                        }
-                    )
-                model_failures.append(f"{STRATEGY_LABELS[strategy_name]}: {exc}")
+                        "suggestion": str(exc),
+                    }
+                )
+                model_failures[spec.name].append(f"{STRATEGY_LABELS[strategy_name]}: {exc}")
+                _step_counter += 1
+                _progress(_step_counter, f"Entrenado {spec.name} · {STRATEGY_LABELS[strategy_name]}")
 
-        if not model_succeeded:
-            notes = ["Ninguna estrategia completó entrenamiento para este modelo."] + model_failures[:3]
+    # Add failure rows for models where no strategy succeeded.
+    for spec in _regression_model_specs("raw"):
+        if spec.builder is not None and not model_succeeded.get(spec.name, False):
+            notes = ["Ninguna estrategia completó entrenamiento para este modelo."] + model_failures.get(spec.name, [])[:3]
             preprocessing_benchmarks.append(
                 _unavailable_benchmark_row(
                     spec,
@@ -1139,11 +1070,11 @@ def compute_temporal_ml_overview(
     simple_heuristics: list[dict[str, Any]] = []
     combo_heuristics: list[dict[str, Any]] = []
 
-    for columns, family_key, family_label in SIMPLE_SEGMENT_SPECS:
+    for columns, family_key, family_label, display_label in SIMPLE_SEGMENT_SPECS:
         heuristic, grouped_train, grouped_test, medians = _build_segment_heuristic(
             name=f"Heuristic Median - {family_label}",
             family_key=family_key,
-            family_label=family_label,
+            family_label=display_label,
             columns=columns,
             train_df=train_df,
             test_df=test_df,
@@ -1163,11 +1094,11 @@ def compute_temporal_ml_overview(
             "grouping_type": "simple",
         }
 
-    for columns, family_key, family_label in COMBO_SEGMENT_SPECS:
+    for columns, family_key, family_label, display_label in COMBO_SEGMENT_SPECS:
         heuristic, grouped_train, grouped_test, medians = _build_segment_heuristic(
             name=f"Heuristic Median - {family_label}",
             family_key=family_key,
-            family_label=family_label,
+            family_label=display_label,
             columns=columns,
             train_df=train_df,
             test_df=test_df,
@@ -1211,30 +1142,30 @@ def compute_temporal_ml_overview(
         combo_medians = {"Other": baseline_prediction}
 
     hierarchical_train_predictions: list[float] = []
-    hierarchical_train_usage = {"Best Combination": 0, "Best Simple Segment": 0, "Global Median": 0}
+    hierarchical_train_usage = {"Mejor combinación": 0, "Mejor segmento simple": 0, "Mediana global": 0}
     for combo_label, simple_label in zip(combo_train_labels.tolist(), simple_train_labels.tolist(), strict=False):
         if combo_label != "Other" and combo_label in combo_medians:
             hierarchical_train_predictions.append(float(combo_medians[combo_label]))
-            hierarchical_train_usage["Best Combination"] += 1
+            hierarchical_train_usage["Mejor combinación"] += 1
         elif simple_label != "Other" and simple_label in simple_medians:
             hierarchical_train_predictions.append(float(simple_medians[simple_label]))
-            hierarchical_train_usage["Best Simple Segment"] += 1
+            hierarchical_train_usage["Mejor segmento simple"] += 1
         else:
             hierarchical_train_predictions.append(float(baseline_prediction))
-            hierarchical_train_usage["Global Median"] += 1
+            hierarchical_train_usage["Mediana global"] += 1
 
     hierarchical_test_predictions: list[float] = []
-    hierarchical_test_usage = {"Best Combination": 0, "Best Simple Segment": 0, "Global Median": 0}
+    hierarchical_test_usage = {"Mejor combinación": 0, "Mejor segmento simple": 0, "Mediana global": 0}
     for combo_label, simple_label in zip(combo_test_labels.tolist(), simple_test_labels.tolist(), strict=False):
         if combo_label != "Other" and combo_label in combo_medians:
             hierarchical_test_predictions.append(float(combo_medians[combo_label]))
-            hierarchical_test_usage["Best Combination"] += 1
+            hierarchical_test_usage["Mejor combinación"] += 1
         elif simple_label != "Other" and simple_label in simple_medians:
             hierarchical_test_predictions.append(float(simple_medians[simple_label]))
-            hierarchical_test_usage["Best Simple Segment"] += 1
+            hierarchical_test_usage["Mejor segmento simple"] += 1
         else:
             hierarchical_test_predictions.append(float(baseline_prediction))
-            hierarchical_test_usage["Global Median"] += 1
+            hierarchical_test_usage["Mediana global"] += 1
 
     hierarchical_train_array = np.asarray(hierarchical_train_predictions, dtype=float)
     hierarchical_test_array = np.asarray(hierarchical_test_predictions, dtype=float)
@@ -1244,9 +1175,11 @@ def compute_temporal_ml_overview(
             "family_key": "hierarchical_backoff",
             "family_label": "Hierarchical Backoff",
             "rule_summary": (
-                f"Usa {best_combo['family_label'] if best_combo is not None else 'ninguna combinacion representativa'}, "
-                f"luego {best_simple['family_label'] if best_simple is not None else 'ningun segmento simple representativo'} "
-                "y finalmente la mediana global."
+                f"Cascada jerárquica: primero intenta predecir con la combinación "
+                f"({best_combo['family_label'] if best_combo is not None else 'ninguna combinación representativa'}), "
+                f"si el segmento no es representativo baja al segmento simple "
+                f"({best_simple['family_label'] if best_simple is not None else 'ningún segmento simple representativo'}), "
+                "y si tampoco aplica usa la mediana global."
             ),
             "train_metrics": _metric_summary(train_target, hierarchical_train_array, baseline_train_vector),
             "metrics": _metric_summary(test_target, hierarchical_test_array, baseline_test_vector),
@@ -1258,6 +1191,9 @@ def compute_temporal_ml_overview(
         }
     )
 
+    _step_counter += 1
+    _progress(_step_counter, "Heurísticas calculadas")
+
     heuristic_models = sorted(heuristic_models, key=lambda item: float(item["metrics"]["mae"]))
     best_heuristic = heuristic_models[0] if heuristic_models else None
     best_regression = min(regression_runs, key=lambda item: float(item["metrics"]["mae"]), default=None)
@@ -1266,7 +1202,7 @@ def compute_temporal_ml_overview(
     if best_regression is not None and best_heuristic is not None:
         best_regression_predictions = np.asarray([row["predicted"] for row in best_regression["predictions"]], dtype=float)
         best_heuristic_predictions = np.asarray([row["predicted"] for row in best_heuristic["predictions"]], dtype=float)
-        for columns, family_key, family_label in SIMPLE_SEGMENT_SPECS + COMBO_SEGMENT_SPECS:
+        for columns, family_key, family_label, _display_label in SIMPLE_SEGMENT_SPECS + COMBO_SEGMENT_SPECS:
             artifact = segment_artifacts[family_key]
             segment_reports.append(
                 _segment_rows(
@@ -1314,14 +1250,13 @@ def compute_temporal_ml_overview(
         }
     )
 
-    learning_sections = _learning_sections(
-        train_target=train_target,
-        full_target=data[target_col].dropna(),
-        warnings=warnings,
-        best_regression=best_regression,
-        best_heuristic=best_heuristic,
-        target_transformation_diagnostics=target_transformation_diagnostics,
-    )
+    _progress(_total_steps - 2, "Entrenando clasificación por bandas")
+
+    from app.stats.ml_classification import compute_priority_classification
+
+    priority_classification = compute_priority_classification(df, target_col, week_col)
+
+    _progress(_total_steps, "Análisis completo")
 
     model_results = _top_level_model_results(regression_runs) + unavailable_model_results
     model_results = sorted(
@@ -1352,6 +1287,6 @@ def compute_temporal_ml_overview(
         "segment_reports": segment_reports,
         "heuristic_models": heuristic_models,
         "strategy_comparison": strategy_comparison,
-        "learning_sections": learning_sections,
         "target_transformation_diagnostics": target_transformation_diagnostics,
+        "priority_classification": priority_classification,
     }

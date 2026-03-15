@@ -18,6 +18,7 @@ import type {
   MlBenchmarkRow,
   MlEvaluationSummary,
   MlModelResult,
+  SegmentMedianEntry,
   StrategyComparisonEntry,
   TreeNode,
 } from '../api/types';
@@ -28,7 +29,7 @@ type Props = {
   payload: MlEvaluationSummary;
 };
 
-type TabKey = 'regresiones' | 'heuristicas' | 'aprendizajes';
+type TabKey = 'regresiones' | 'heuristicas';
 
 function formatMetric(value?: number | null): string {
   return value == null || Number.isNaN(value) ? '-' : value.toFixed(3);
@@ -41,8 +42,7 @@ function formatSignedMetric(value?: number | null): string {
 
 function tabLabel(tab: TabKey): string {
   if (tab === 'regresiones') return 'Regresiones';
-  if (tab === 'heuristicas') return 'Heurísticas';
-  return 'Aprendizajes';
+  return 'Heurísticas';
 }
 
 function modelBadgeText(model: MlModelResult): string {
@@ -83,8 +83,7 @@ function strategyLabelRank(label: string): number {
   const order = [
     'Raw target',
     'Log1p target',
-    'Log1p + outlier normalization',
-    'Winsor IQR',
+    'Log1p + sin outliers',
   ];
   const index = order.indexOf(label);
   return index === -1 ? order.length : index;
@@ -167,6 +166,8 @@ function BenchmarkTable({
             <th>RMSE</th>
             <th>MedAE</th>
             <th>R²</th>
+            <th>MSLE</th>
+            <th>MAPE</th>
             <th>Baseline</th>
           </tr>
         </thead>
@@ -189,6 +190,8 @@ function BenchmarkTable({
                 <td>{formatMetric(row.metrics.rmse)}</td>
                 <td>{formatMetric(row.metrics.medae)}</td>
                 <td>{formatMetric(row.metrics.r2)}</td>
+                <td>{formatMetric(row.metrics.msle)}</td>
+                <td>{formatMetric(row.metrics.mape)}</td>
                 <td>{formatMetric(row.metrics.baseline_mae)}</td>
               </tr>
             );
@@ -950,6 +953,37 @@ function HeuristicView({ payload }: Props) {
             <p className="muted" style={{ marginTop: '1rem' }}>{selectedHeuristic.rule_summary}</p>
           </div>
 
+          {selectedHeuristic.segment_medians && selectedHeuristic.segment_medians.length > 0 ? (
+            <div className="panel table-panel">
+              <div className="table-header">
+                <div>
+                  <h3>Medianas por segmento</h3>
+                  <span className="muted">Valor de predicción y cantidad de observaciones de entrenamiento por segmento.</span>
+                </div>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Segmento</th>
+                      <th>Mediana (días)</th>
+                      <th>Observaciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedHeuristic.segment_medians.map((entry: SegmentMedianEntry) => (
+                      <tr key={entry.segment}>
+                        <td>{entry.segment}</td>
+                        <td>{formatMetric(entry.median)}</td>
+                        <td>{entry.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+
           <div className="grid-2">
             <PredictionsChart rows={selectedHeuristic.predictions} title="Predicciones heurísticas" />
 
@@ -981,28 +1015,6 @@ function HeuristicView({ payload }: Props) {
   );
 }
 
-function LearningView({ payload }: Props) {
-  return (
-    <section className="stack">
-      {payload.learning_sections.map((section) => (
-        <article key={section.slug} className="panel">
-          <div className="section-header">
-            <div>
-              <h3>{section.title}</h3>
-              <p className="muted">{section.summary}</p>
-            </div>
-          </div>
-          <ul className="plain-list">
-            {section.bullets.map((bullet) => (
-              <li key={bullet}>{bullet}</li>
-            ))}
-          </ul>
-        </article>
-      ))}
-    </section>
-  );
-}
-
 export default function MlOverviewPanel({ payload }: Props) {
   const [tab, setTab] = useState<TabKey>('regresiones');
 
@@ -1013,13 +1025,13 @@ export default function MlOverviewPanel({ payload }: Props) {
           <div>
             <h3>Semana 2.1</h3>
             <p className="muted">
-              Comparación entre regresiones, heurísticas y aprendizajes académicos sobre el mismo holdout temporal.
+              Comparación entre regresiones y heurísticas sobre el mismo holdout temporal.
             </p>
           </div>
         </div>
 
         <div className="segmented" style={{ marginTop: '0.75rem', flexWrap: 'wrap' }}>
-          {(['regresiones', 'heuristicas', 'aprendizajes'] as TabKey[]).map((candidate) => (
+          {(['regresiones', 'heuristicas'] as TabKey[]).map((candidate) => (
             <button
               key={candidate}
               type="button"
@@ -1036,7 +1048,6 @@ export default function MlOverviewPanel({ payload }: Props) {
 
       {tab === 'regresiones' ? <RegressionView payload={payload} /> : null}
       {tab === 'heuristicas' ? <HeuristicView payload={payload} /> : null}
-      {tab === 'aprendizajes' ? <LearningView payload={payload} /> : null}
     </section>
   );
 }

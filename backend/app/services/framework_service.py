@@ -6,7 +6,7 @@ import threading
 from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 
@@ -127,12 +127,98 @@ class FrameworkService:
         return self._build_week1_bundle(week_id)["clustering_payload"]
 
     def get_week_ml_overview(self, week_id: str) -> dict[str, Any]:
+        cached = self.get_week_ml_cached(week_id)
+        if cached is not None:
+            return cached
         week = self._require_analysis(week_id, expected="ml_overview")
         payload = self._build_week_ml_payload(week)
         payload["week_id"] = week["week_id"]
         payload["stage_name"] = week["stage_name"]
         payload["artifacts"] = self._artifact_payload(week)
+        self._save_ml_cache(week_id, payload)
         return payload
+
+    def get_week_ml_cached(self, week_id: str) -> dict[str, Any] | None:
+        """Return cached ML results or None if no cache exists."""
+        cache_path = self.workspace_dir / week_id / "ml_overview.json"
+        if cache_path.exists():
+            return json.loads(cache_path.read_text(encoding="utf-8"))
+        return None
+
+    def run_week_ml_with_progress(
+        self,
+        week_id: str,
+        on_progress: Callable[[int, int, str], None] | None = None,
+    ) -> dict[str, Any]:
+        """Run ML analysis with progress callback and cache the result."""
+        from app.stats.ml import compute_temporal_ml_overview as _compute_ml
+        from app.stats.supervised import compute_anova, compute_multiple_regression_out, compute_supervised_overview
+
+        week = self._require_analysis(week_id, expected="ml_overview")
+
+        try:
+            out_df = self._load_source_dataframe(week["week_id"], "out")
+            analysis_df = out_df
+        except ValueError:
+            out_df = None
+            analysis_df, _ = self.workspace_store.load_dataset(week["week_id"])
+
+        temporal_payload = _compute_ml(analysis_df, on_progress=on_progress)
+        supervised_payload = compute_supervised_overview(analysis_df)
+        anova_payload = compute_anova(analysis_df)
+
+        if out_df is not None:
+            multiple_regression_payload = compute_multiple_regression_out(out_df)
+        else:
+            multiple_regression_payload = {
+                "source": "out",
+                "target_present": False,
+                "model_built": False,
+                "formula": None,
+                "n_obs": 0,
+                "n_features": 0,
+                "r_squared": None,
+                "adj_r_squared": None,
+                "f_statistic": None,
+                "f_p_value": None,
+                "aic": None,
+                "bic": None,
+                "coefficients": [],
+                "anova_rows": [],
+                "conclusions": [],
+                "warnings": [
+                    {
+                        "code": "missing_out_source",
+                        "severity": "warning",
+                        "column": None,
+                        "message": "OUT source is not available for this week.",
+                        "suggestion": "Provide an OUT dataset to enable multiple regression context.",
+                    }
+                ],
+            }
+
+        temporal_payload["warnings"] = self._dedupe_warnings(
+            temporal_payload.get("warnings", [])
+            + supervised_payload.get("warnings", [])
+            + anova_payload.get("warnings", [])
+            + multiple_regression_payload.get("warnings", [])
+        )
+        temporal_payload["supervised_overview"] = supervised_payload
+        temporal_payload["anova"] = anova_payload
+        temporal_payload["multiple_regression"] = multiple_regression_payload
+
+        temporal_payload["week_id"] = week["week_id"]
+        temporal_payload["stage_name"] = week["stage_name"]
+        temporal_payload["artifacts"] = self._artifact_payload(week)
+
+        self._save_ml_cache(week_id, temporal_payload)
+        return temporal_payload
+
+    def _save_ml_cache(self, week_id: str, payload: dict[str, Any]) -> None:
+        cache_dir = self.workspace_dir / week_id
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_path = cache_dir / "ml_overview.json"
+        cache_path.write_text(json.dumps(payload, default=str, ensure_ascii=False), encoding="utf-8")
 
     def get_week_notes(self, week_id: str) -> dict[str, Any]:
         self._get_week_definition(week_id)
@@ -547,12 +633,6 @@ class FrameworkService:
                         f"  - {row['segment']}: test={row['test_count']}, mae_reg={row.get('regression_mae')}, mae_heur={row.get('heuristic_mae')}."
                     )
 
-        learning_sections = ml.get("learning_sections", [])
-        if learning_sections:
-            lines.extend(["", "## Aprendizajes"])
-            for section in learning_sections[:6]:
-                lines.append(f"- {section['title']}: {section['summary']}")
-
         warning_messages = [warning["message"] for warning in ml.get("warnings", [])[:6]]
         if warning_messages:
             lines.extend(["", "## Advertencias principales"])
@@ -652,14 +732,6 @@ class FrameworkService:
                     f"<ul>{''.join(segment_parts)}</ul>",
                 ]
             )
-
-        learning_sections = ml.get("learning_sections", [])
-        if learning_sections:
-            learning_html = "".join(
-                f"<li><strong>{escape(str(section['title']))}</strong>: {escape(str(section['summary']))}</li>"
-                for section in learning_sections[:6]
-            )
-            body_parts.extend(["<h2>Aprendizajes</h2>", f"<ul>{learning_html}</ul>"])
 
         warnings_html = "".join(
             f"<li>{escape(str(warning['message']))}</li>" for warning in ml.get("warnings", [])[:6]

@@ -77,24 +77,22 @@ def test_temporal_ml_overview_reports_optional_boosters_as_warnings(monkeypatch)
     assert model_index["XGBoost"]["metrics"]["mae"] is None
 
 
-def test_temporal_ml_overview_exposes_target_strategies_and_learning_sections() -> None:
+def test_temporal_ml_overview_exposes_three_target_strategies() -> None:
     payload = compute_temporal_ml_overview(_build_temporal_df())
 
     strategy_names = {(row["model_name"], row["strategy_name"]) for row in payload["preprocessing_benchmarks"]}
     assert ("Decision Tree", "raw") in strategy_names
     assert ("Decision Tree", "log1p") in strategy_names
-    assert ("Decision Tree", "log1p_outlier_norm") in strategy_names
-    assert ("Decision Tree", "winsor_iqr") in strategy_names
-    assert any(section["slug"] == "transformacion-log" for section in payload["learning_sections"])
+    assert ("Decision Tree", "log1p_drop_outliers") in strategy_names
     diagnostics = payload["target_transformation_diagnostics"]
     assert diagnostics["scope"] == "train_only"
-    assert len(diagnostics["steps"]) >= 4
+    assert len(diagnostics["steps"]) >= 3
     assert diagnostics["boxplot_data"]
     assert payload["strategy_comparison"] is not None
 
     raw_step = next(step for step in diagnostics["steps"] if step["step_key"] == "raw")
-    normalized_step = next(step for step in diagnostics["steps"] if step["step_key"] == "log1p_outlier_norm")
-    assert normalized_step["stats"]["outlier_ratio"] <= raw_step["stats"]["outlier_ratio"]
+    clean_step = next(step for step in diagnostics["steps"] if step["step_key"] == "log1p_drop_outliers")
+    assert clean_step["stats"]["outlier_ratio"] <= raw_step["stats"]["outlier_ratio"]
 
 
 def test_temporal_ml_overview_groups_small_segments_into_other_and_builds_hierarchical_backoff() -> None:

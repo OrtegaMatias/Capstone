@@ -77,6 +77,3 @@ pytest
 cd frontend
 npm run build
 ```
-
-## Compatibilidad heredada
-Los endpoints legacy centrados en `dataset_id` siguen presentes como compatibilidad temporal, pero la UI principal ya no depende de ellos.

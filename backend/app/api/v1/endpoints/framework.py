@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+from queue import Queue
+
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response, StreamingResponse
 
 from app.schemas.academic_eda import WeekAcademicEDAResponse, WeekClusteringResponse
 from app.schemas.dataset import PreviewResponse
@@ -51,6 +55,53 @@ def get_week_clustering(week_id: str) -> WeekClusteringResponse:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return WeekClusteringResponse(**payload)
+
+
+@router.get("/weeks/{week_id}/ml/cached")
+def get_week_ml_cached(week_id: str) -> Response:
+    """Return cached ML results or 204 if no cache exists."""
+    cached = framework_service.get_week_ml_cached(week_id)
+    if cached is None:
+        return Response(status_code=204)
+    return Response(
+        content=json.dumps(cached, default=str, ensure_ascii=False),
+        media_type="application/json",
+    )
+
+
+@router.post("/weeks/{week_id}/ml/run")
+def run_week_ml_sse(week_id: str) -> StreamingResponse:
+    """Run ML analysis with SSE progress events."""
+    progress_queue: Queue[str | None] = Queue()
+
+    def on_progress(current: int, total: int, message: str) -> None:
+        data = json.dumps({"current": current, "total": total, "message": message})
+        progress_queue.put(f"data: {data}\n\n")
+
+    def event_stream():  # type: ignore[no-untyped-def]
+        import threading
+
+        def _run() -> None:
+            try:
+                payload = framework_service.run_week_ml_with_progress(week_id, on_progress)
+                done_data = json.dumps(payload, default=str, ensure_ascii=False)
+                progress_queue.put(f"event: done\ndata: {done_data}\n\n")
+            except Exception as exc:
+                err_data = json.dumps({"detail": str(exc)})
+                progress_queue.put(f"event: error\ndata: {err_data}\n\n")
+            finally:
+                progress_queue.put(None)  # sentinel
+
+        worker = threading.Thread(target=_run, daemon=True)
+        worker.start()
+
+        while True:
+            item = progress_queue.get()
+            if item is None:
+                break
+            yield item
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.get("/weeks/{week_id}/ml/overview", response_model=MlEvaluationSummary)

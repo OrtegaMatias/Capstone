@@ -1,16 +1,37 @@
-import type { ClassificationModelResult, MethodologyStep, PriorityClassificationResult } from '../api/types';
+import { useRef, useState } from 'react';
+import Plot from 'react-plotly.js';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+
+import type {
+  ClassificationModelResult,
+  ClassificationPredictionPoint,
+  MethodologyStep,
+  MlSplitSummary,
+  PriorityClassificationResult,
+} from '../api/types';
+import { exportHtmlElementAsPng, exportSvgInContainerAsPng } from '../utils/chartExport';
 
 type Props = {
   classification: PriorityClassificationResult;
+  split?: MlSplitSummary;
 };
 
 const BAND_COLORS: Record<string, string> = {
-  Rapido: '#e74c3c',
-  Medio: '#f39c12',
-  Largo: '#95a5a6',
+  Rapido: '#1f8f6b',
+  Medio: '#d08a22',
+  Largo: '#b14c36',
   // Legacy 4-band colors
-  Urgente: '#e74c3c',
-  Corto: '#f59e0b',
+  Urgente: '#b14c36',
+  Corto: '#d08a22',
 };
 
 const STEP_ICONS: Record<number, string> = {
@@ -26,37 +47,682 @@ const STEP_ICONS: Record<number, string> = {
   10: '10',
 };
 
+type FlowChartRow = {
+  actualBand: string;
+  total: number;
+} & Record<string, string | number>;
+
+type FlowTooltipEntry = {
+  color?: string;
+  dataKey?: string | number;
+  value?: number | string;
+  payload?: FlowChartRow;
+  name?: string;
+};
+
+type FlowTooltipProps = {
+  active?: boolean;
+  label?: string;
+  payload?: FlowTooltipEntry[];
+};
+
 function formatPct(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatPercentValue(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
+function formatCount(value: number): string {
+  return value.toLocaleString('es-CL');
 }
 
 function formatMetric(value: number): string {
   return value.toFixed(4);
 }
 
-function BandCards({ classification }: Props) {
+function formatMaybeMetric(value: number | null | undefined, digits = 3): string {
+  if (value == null || Number.isNaN(value)) return 'n/a';
+  return value.toFixed(digits);
+}
+
+async function exportSectionPng(element: HTMLElement | null, fileBaseName: string, sectionLabel: string): Promise<void> {
+  if (!element) return;
+  try {
+    await exportHtmlElementAsPng(
+      element,
+      fileBaseName,
+      { scale: 4, backgroundColor: '#f7f3ec' },
+    );
+  } catch (error) {
+    console.error(`${sectionLabel} export failed`, error);
+    window.alert('No se pudo exportar el PNG HD de esta sección.');
+  }
+}
+
+function formatRange(minDays: number, maxDays: number): string {
+  return maxDays > 999 ? `${minDays}+ dias` : `${minDays}-${maxDays} dias`;
+}
+
+function formatDeltaPoints(value: number): string {
+  const points = value * 100;
+  return `${points >= 0 ? '+' : ''}${points.toFixed(1)} pp`;
+}
+
+function buildHistogramWindow(predictions: ClassificationPredictionPoint[]): { start: number; end: number; size: number } | null {
+  const values = predictions
+    .map((point) => point.actual_days)
+    .filter((value) => Number.isFinite(value));
+
+  if (values.length === 0) return null;
+
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  if (minValue === maxValue) {
+    return { start: minValue - 0.5, end: maxValue + 0.5, size: 1 };
+  }
+
+  const size = Math.max((maxValue - minValue) / 18, 0.5);
+  return {
+    start: minValue,
+    end: maxValue + size,
+    size,
+  };
+}
+
+function buildFlowChartData(
+  predictions: ClassificationPredictionPoint[],
+  bandLabels: string[],
+): FlowChartRow[] {
+  return bandLabels.map((actualBand) => {
+    const rowPredictions = predictions.filter((point) => point.actual_band === actualBand);
+    const total = rowPredictions.length;
+    const row: FlowChartRow = {
+      actualBand,
+      total,
+    };
+
+    for (const predictedBand of bandLabels) {
+      const count = rowPredictions.filter((point) => point.predicted_band === predictedBand).length;
+      row[predictedBand] = total > 0 ? (count / total) * 100 : 0;
+      row[`${predictedBand}__count`] = count;
+    }
+
+    return row;
+  });
+}
+
+function describeBand(label: string, minDays: number, maxDays: number): string {
+  if (label === 'Rapido') return `Salida veloz en ${formatRange(minDays, maxDays)}.`;
+  if (label === 'Medio') return `Comportamiento intermedio en ${formatRange(minDays, maxDays)}.`;
+  if (label === 'Largo') return `Retencion prolongada de ${formatRange(minDays, maxDays)}.`;
+  return `Contenedores en ${formatRange(minDays, maxDays)}.`;
+}
+
+function BandBar({ label, ratio, color }: { label: string; ratio: number; color: string }) {
   return (
-    <div className="mini-grid">
-      {classification.bands.map((band) => {
-        const color = BAND_COLORS[band.label] ?? '#95a5a6';
-        return (
-          <article
-            key={band.label}
-            className="mini-panel"
-            style={{ borderLeft: `4px solid ${color}` }}
-          >
-            <strong style={{ color }}>{band.label}</strong>
-            <p style={{ fontSize: '0.85rem' }}>
-              {band.min_days}–{band.max_days > 999 ? '...' : band.max_days} dias
-            </p>
-            <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8rem' }}>
-              <span>Train: <strong>{band.count_train}</strong></span>
-              <span>Test: <strong>{band.count_test}</strong></span>
-            </div>
-          </article>
-        );
-      })}
+    <div style={{ display: 'grid', gap: '0.35rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', fontSize: '0.82rem' }}>
+        <span style={{ color: 'var(--muted)', fontWeight: 600 }}>{label}</span>
+        <strong style={{ color }}>{formatPct(ratio)}</strong>
+      </div>
+      <div
+        style={{
+          height: '10px',
+          borderRadius: '999px',
+          overflow: 'hidden',
+          background: 'rgba(29, 43, 54, 0.08)',
+          border: '1px solid rgba(29, 43, 54, 0.06)',
+        }}
+      >
+        <div
+          style={{
+            width: `${Math.max(0, Math.min(100, ratio * 100))}%`,
+            height: '100%',
+            borderRadius: '999px',
+            background: `linear-gradient(90deg, ${color}cc 0%, ${color} 100%)`,
+          }}
+        />
+      </div>
     </div>
+  );
+}
+
+function BandCards({ classification, split }: Props) {
+  const totalTrain = classification.bands.reduce((sum, band) => sum + band.count_train, 0);
+  const totalTest = classification.bands.reduce((sum, band) => sum + band.count_test, 0);
+  const totalWeeks = (split?.train_weeks.length ?? 0) + (split?.test_weeks.length ?? 0);
+
+  return (
+    <div style={{ display: 'grid', gap: '1rem' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gap: '0.75rem',
+        }}
+      >
+        <article className="mini-panel" style={{ background: 'linear-gradient(180deg, #fbfdfe 0%, #f4f8fa 100%)' }}>
+          <strong>Ventana temporal</strong>
+          <p>{totalWeeks > 0 ? `${totalWeeks} semanas` : 'n/a'}</p>
+          {split ? (
+            <small className="muted">
+              Train {split.train_weeks.length} | Test {split.test_weeks.join(', ') || 'n/a'}
+            </small>
+          ) : null}
+        </article>
+        <article className="mini-panel" style={{ background: 'linear-gradient(180deg, #fbfdfe 0%, #f4f8fa 100%)' }}>
+          <strong>Total train</strong>
+          <p>{formatCount(totalTrain)}</p>
+          <small className="muted">Distribucion historica usada para entrenar.</small>
+        </article>
+        <article className="mini-panel" style={{ background: 'linear-gradient(180deg, #fbfdfe 0%, #f4f8fa 100%)' }}>
+          <strong>Total test</strong>
+          <p>{formatCount(totalTest)}</p>
+          <small className="muted">Holdout temporal para validar el clasificador.</small>
+        </article>
+        <article className="mini-panel" style={{ background: 'linear-gradient(180deg, #fbfdfe 0%, #f4f8fa 100%)' }}>
+          <strong>Baseline</strong>
+          <p>{formatPct(classification.baseline_accuracy)}</p>
+          <small className="muted">Accuracy de la clase mas frecuente.</small>
+        </article>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(265px, 1fr))',
+          gap: '1rem',
+        }}
+      >
+        {classification.bands.map((band) => {
+          const color = BAND_COLORS[band.label] ?? '#95a5a6';
+          const trainRatio = totalTrain > 0 ? band.count_train / totalTrain : 0;
+          const testRatio = totalTest > 0 ? band.count_test / totalTest : 0;
+          const delta = testRatio - trainRatio;
+
+          return (
+            <article
+              key={band.label}
+              style={{
+                border: `1px solid ${color}33`,
+                borderTop: `5px solid ${color}`,
+                borderRadius: '16px',
+                padding: '1rem',
+                background: `linear-gradient(180deg, ${color}12 0%, rgba(255,255,255,0.96) 42%, #ffffff 100%)`,
+                boxShadow: '0 10px 24px rgba(23, 48, 67, 0.08)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.55rem', marginBottom: '0.45rem' }}>
+                    <span
+                      style={{
+                        width: '12px',
+                        height: '12px',
+                        borderRadius: '999px',
+                        background: color,
+                        boxShadow: `0 0 0 5px ${color}1f`,
+                      }}
+                    />
+                    <strong style={{ color, fontSize: '1rem' }}>{band.label}</strong>
+                  </div>
+                  <div style={{ fontSize: '1.08rem', fontWeight: 800, color: 'var(--ink)' }}>
+                    {formatRange(band.min_days, band.max_days)}
+                  </div>
+                </div>
+                <span
+                  style={{
+                    padding: '0.35rem 0.6rem',
+                    borderRadius: '999px',
+                    background: `${color}18`,
+                    color,
+                    fontSize: '0.74rem',
+                    fontWeight: 800,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {delta >= 0 ? 'sube en test' : 'baja en test'}
+                </span>
+              </div>
+
+              <p style={{ margin: '0.55rem 0 0', fontSize: '0.88rem', lineHeight: 1.55, color: 'var(--muted)' }}>
+                {describeBand(band.label, band.min_days, band.max_days)}
+              </p>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  gap: '0.75rem',
+                  marginTop: '1rem',
+                }}
+              >
+                <div
+                  style={{
+                    padding: '0.8rem',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(29, 43, 54, 0.08)',
+                    background: 'rgba(255,255,255,0.88)',
+                  }}
+                >
+                  <small className="muted" style={{ display: 'block', marginBottom: '0.3rem' }}>Train</small>
+                  <strong style={{ display: 'block', fontSize: '1.2rem' }}>{formatCount(band.count_train)}</strong>
+                  <span style={{ fontSize: '0.84rem', color: color }}>{formatPct(trainRatio)}</span>
+                </div>
+                <div
+                  style={{
+                    padding: '0.8rem',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(29, 43, 54, 0.08)',
+                    background: 'rgba(255,255,255,0.88)',
+                  }}
+                >
+                  <small className="muted" style={{ display: 'block', marginBottom: '0.3rem' }}>Test</small>
+                  <strong style={{ display: 'block', fontSize: '1.2rem' }}>{formatCount(band.count_test)}</strong>
+                  <span style={{ fontSize: '0.84rem', color: color }}>{formatPct(testRatio)}</span>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gap: '0.7rem', marginTop: '1rem' }}>
+                <BandBar label="Peso en train" ratio={trainRatio} color={color} />
+                <BandBar label="Peso en test" ratio={testRatio} color={color} />
+              </div>
+
+              <div
+                style={{
+                  marginTop: '1rem',
+                  padding: '0.85rem 0.9rem',
+                  borderRadius: '12px',
+                  border: '1px dashed rgba(29, 43, 54, 0.12)',
+                  background: 'rgba(250, 252, 253, 0.92)',
+                }}
+              >
+                <small
+                  style={{
+                    display: 'block',
+                    fontSize: '0.73rem',
+                    color: 'var(--muted)',
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                    marginBottom: '0.25rem',
+                  }}
+                >
+                  Cambio test vs train
+                </small>
+                <strong style={{ color, fontSize: '1rem' }}>{formatDeltaPoints(delta)}</strong>
+                <p style={{ margin: '0.35rem 0 0', fontSize: '0.82rem', color: 'var(--muted)' }}>
+                  Diferencia en participacion de la banda entre ambos cortes.
+                </p>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function FlowTooltipContent({ active, payload, label }: FlowTooltipProps) {
+  if (!active || !payload || payload.length === 0) return null;
+
+  const row = payload[0]?.payload;
+  if (!row) return null;
+
+  const entries = payload
+    .filter((entry) => typeof entry.dataKey === 'string' && !String(entry.dataKey).endsWith('__count'))
+    .map((entry) => {
+      const band = String(entry.dataKey);
+      const pct = typeof entry.value === 'number' ? entry.value : Number(entry.value ?? 0);
+      const countKey = `${band}__count`;
+      const count = typeof row[countKey] === 'number' ? Number(row[countKey]) : 0;
+      return {
+        band,
+        pct,
+        count,
+        color: entry.color ?? BAND_COLORS[band] ?? '#21495f',
+      };
+    })
+    .sort((left, right) => right.pct - left.pct);
+
+  return (
+    <div
+      style={{
+        backgroundColor: 'var(--panel)',
+        border: '1px solid var(--line)',
+        borderRadius: '10px',
+        padding: '0.75rem 0.9rem',
+        boxShadow: '0 10px 20px rgba(23, 48, 67, 0.12)',
+      }}
+    >
+      <strong style={{ display: 'block', marginBottom: '0.45rem' }}>{label}</strong>
+      <p style={{ margin: '0 0 0.5rem', fontSize: '0.82rem', color: 'var(--muted)' }}>
+        Total holdout: {formatCount(Number(row.total ?? 0))}
+      </p>
+      <div style={{ display: 'grid', gap: '0.35rem' }}>
+        {entries.map((entry) => (
+          <div key={entry.band} style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', fontSize: '0.82rem' }}>
+            <span style={{ color: entry.color, fontWeight: 700 }}>{entry.band}</span>
+            <span>{formatCount(entry.count)} | {formatPercentValue(entry.pct)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HistogramByBandPanel({
+  predictions,
+  bandLabels,
+  testLabel,
+}: {
+  predictions: ClassificationPredictionPoint[];
+  bandLabels: string[];
+  testLabel: string;
+}) {
+  const [selectedBand, setSelectedBand] = useState(bandLabels[0] ?? '');
+  const chartRef = useRef<HTMLDivElement | null>(null);
+  const activeBand = bandLabels.includes(selectedBand) ? selectedBand : (bandLabels[0] ?? '');
+  const histogramWindow = buildHistogramWindow(predictions);
+  const activeColor = BAND_COLORS[activeBand] ?? '#21495f';
+  const actualValues = predictions
+    .filter((point) => point.actual_band === activeBand)
+    .map((point) => point.actual_days);
+  const predictedValues = predictions
+    .filter((point) => point.predicted_band === activeBand)
+    .map((point) => point.actual_days);
+
+  const handleExport = async () => {
+    if (!chartRef.current) return;
+    try {
+      await exportSvgInContainerAsPng(chartRef.current, `histograma-real-vs-predicho-${activeBand}-${testLabel}`);
+    } catch (error) {
+      console.error('classification histogram export failed', error);
+      window.alert('No se pudo exportar el PNG HD de esta gráfica.');
+    }
+  };
+
+  return (
+    <div className="panel table-panel">
+      <div className="chart-header">
+        <div>
+          <h3>Histograma real vs predicho por banda</h3>
+          <p className="chart-note muted">
+            Compara la distribucion de <code>DaysInDeposit</code> real entre filas cuya banda fue real vs predicha.
+          </p>
+        </div>
+        <button type="button" className="chart-export-btn" onClick={() => void handleExport()}>
+          Descargar PNG HD
+        </button>
+      </div>
+
+      <div className="tag-list" style={{ marginBottom: '0.9rem' }}>
+        {bandLabels.map((bandLabel) => (
+          <button
+            key={bandLabel}
+            type="button"
+            className={`tag ${activeBand === bandLabel ? 'active' : ''}`}
+            onClick={() => setSelectedBand(bandLabel)}
+            style={activeBand === bandLabel ? { background: BAND_COLORS[bandLabel] ?? 'var(--accent)', color: '#fff' } : undefined}
+          >
+            {bandLabel}
+          </button>
+        ))}
+      </div>
+
+      <div className="mini-grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', marginBottom: '0.9rem' }}>
+        <article className="mini-panel">
+          <strong>Filas banda real</strong>
+          <p>{formatCount(actualValues.length)}</p>
+        </article>
+        <article className="mini-panel">
+          <strong>Filas banda predicha</strong>
+          <p>{formatCount(predictedValues.length)}</p>
+        </article>
+      </div>
+
+      {histogramWindow && (actualValues.length > 0 || predictedValues.length > 0) ? (
+        <div ref={chartRef} className="chart-export-area">
+          <Plot
+            data={[
+              {
+                x: actualValues,
+                type: 'histogram',
+                name: `Actual = ${activeBand}`,
+                opacity: 0.72,
+                marker: { color: activeColor },
+                xbins: histogramWindow,
+                hovertemplate: 'DaysInDeposit: %{x}<br>Conteo: %{y}<extra>Actual</extra>',
+              },
+              {
+                x: predictedValues,
+                type: 'histogram',
+                name: `Predicho = ${activeBand}`,
+                opacity: 0.58,
+                marker: { color: '#21495f' },
+                xbins: histogramWindow,
+                hovertemplate: 'DaysInDeposit: %{x}<br>Conteo: %{y}<extra>Predicho</extra>',
+              },
+            ]}
+            layout={{
+              barmode: 'overlay',
+              autosize: true,
+              height: 340,
+              margin: { t: 18, r: 20, b: 56, l: 56 },
+              paper_bgcolor: '#f8f6f3',
+              plot_bgcolor: '#ffffff',
+              legend: { orientation: 'h', y: 1.12 },
+              xaxis: { title: 'DaysInDeposit real' },
+              yaxis: { title: 'Conteo' },
+            }}
+            config={{ displayModeBar: false }}
+            style={{ width: '100%' }}
+            useResizeHandler
+          />
+        </div>
+      ) : (
+        <p className="muted">No hay suficientes filas en esta banda para construir el histograma comparativo.</p>
+      )}
+    </div>
+  );
+}
+
+function ActualToPredictedFlowPanel({
+  predictions,
+  bandLabels,
+  testLabel,
+}: {
+  predictions: ClassificationPredictionPoint[];
+  bandLabels: string[];
+  testLabel: string;
+}) {
+  const chartRef = useRef<HTMLDivElement | null>(null);
+  const data = buildFlowChartData(predictions, bandLabels);
+
+  const handleExport = async () => {
+    if (!chartRef.current) return;
+    try {
+      await exportSvgInContainerAsPng(chartRef.current, `flujo-real-predicho-${testLabel}`);
+    } catch (error) {
+      console.error('classification flow export failed', error);
+      window.alert('No se pudo exportar el PNG HD de esta gráfica.');
+    }
+  };
+
+  return (
+    <div className="panel table-panel">
+      <div className="chart-header">
+        <div>
+          <h3>Flujo banda real → banda predicha</h3>
+          <p className="chart-note muted">
+            Cada barra suma 100% y muestra como se reparte la prediccion dentro de cada banda real.
+          </p>
+        </div>
+        <button type="button" className="chart-export-btn" onClick={() => void handleExport()}>
+          Descargar PNG HD
+        </button>
+      </div>
+      <div ref={chartRef} className="chart-export-area">
+        <ResponsiveContainer width="100%" height={340}>
+          <BarChart data={data} margin={{ top: 12, right: 12, left: 8, bottom: 18 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--line)" opacity={0.55} />
+            <XAxis dataKey="actualBand" tick={{ fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
+            <YAxis
+              domain={[0, 100]}
+              tickFormatter={(value: number) => formatPercentValue(value)}
+              tick={{ fill: 'var(--muted)' }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <Tooltip content={<FlowTooltipContent />} />
+            <Legend />
+            {bandLabels.map((bandLabel) => (
+              <Bar
+                key={bandLabel}
+                dataKey={bandLabel}
+                name={bandLabel}
+                stackId="flow"
+                fill={BAND_COLORS[bandLabel] ?? '#21495f'}
+                radius={bandLabel === bandLabels[bandLabels.length - 1] ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+              />
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function PriorityScoreDistributionPanel({
+  predictions,
+  bandLabels,
+  testLabel,
+}: {
+  predictions: ClassificationPredictionPoint[];
+  bandLabels: string[];
+  testLabel: string;
+}) {
+  const chartRef = useRef<HTMLDivElement | null>(null);
+  const traces = bandLabels
+    .map((bandLabel) => ({
+      bandLabel,
+      values: predictions
+        .filter((point) => point.actual_band === bandLabel && point.priority_score != null)
+        .map((point) => Number(point.priority_score)),
+    }))
+    .filter((entry) => entry.values.length > 0);
+
+  const handleExport = async () => {
+    if (!chartRef.current) return;
+    try {
+      await exportSvgInContainerAsPng(chartRef.current, `priority-score-por-banda-${testLabel}`);
+    } catch (error) {
+      console.error('priority score export failed', error);
+      window.alert('No se pudo exportar el PNG HD de esta gráfica.');
+    }
+  };
+
+  return (
+    <div className="panel table-panel">
+      <div className="chart-header">
+        <div>
+          <h3>Distribución de priority score por banda real</h3>
+          <p className="chart-note muted">
+            Boxplot del score continuo derivado de <code>predict_proba</code>, agrupado por banda real.
+          </p>
+        </div>
+        <button type="button" className="chart-export-btn" onClick={() => void handleExport()} disabled={traces.length === 0}>
+          Descargar PNG HD
+        </button>
+      </div>
+
+      {traces.length > 0 ? (
+        <div ref={chartRef} className="chart-export-area">
+          <Plot
+            data={traces.map((trace) => ({
+              y: trace.values,
+              type: 'box',
+              name: trace.bandLabel,
+              boxpoints: 'outliers',
+              marker: { color: BAND_COLORS[trace.bandLabel] ?? '#21495f' },
+              line: { color: BAND_COLORS[trace.bandLabel] ?? '#21495f' },
+            }))}
+            layout={{
+              autosize: true,
+              height: 340,
+              margin: { t: 18, r: 20, b: 52, l: 50 },
+              paper_bgcolor: '#f8f6f3',
+              plot_bgcolor: '#ffffff',
+              yaxis: { title: 'Priority score' },
+            }}
+            config={{ displayModeBar: false }}
+            style={{ width: '100%' }}
+            useResizeHandler
+          />
+        </div>
+      ) : (
+        <p className="muted">El mejor modelo actual no expone <code>priority_score</code>; esta visualizacion se oculta.</p>
+      )}
+    </div>
+  );
+}
+
+function AnalyticalVisualizationsSection({ classification, split }: Props) {
+  const predictions = classification.best_model_predictions ?? [];
+  const bandLabels = classification.bands.map((band) => band.label);
+  const testLabel = split?.test_weeks.join('-') || 'holdout';
+  const pointsWithScore = predictions.filter((point) => point.priority_score != null);
+
+  if (predictions.length === 0) {
+    return (
+      <section className="panel">
+        <h3>Visualizaciones analíticas</h3>
+        <p className="muted">No hay predicciones detalladas del mejor modelo para construir estas visualizaciones.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="stack">
+      <div className="panel" style={{ borderLeft: '4px solid #21495f' }}>
+        <div className="section-header">
+          <div>
+            <h3>Visualizaciones analíticas</h3>
+            <p className="muted" style={{ margin: '0.45rem 0 0' }}>
+              Lectura visual del mejor clasificador sobre el holdout temporal: distribución real, flujo de bandas y separación del score continuo.
+            </p>
+          </div>
+        </div>
+        <div className="mini-grid" style={{ marginTop: '1rem' }}>
+          <article className="mini-panel">
+            <strong>Mejor modelo</strong>
+            <p>{classification.best_model || 'n/a'}</p>
+          </article>
+          <article className="mini-panel">
+            <strong>Filas detalladas</strong>
+            <p>{formatCount(predictions.length)}</p>
+          </article>
+          <article className="mini-panel">
+            <strong>Con score</strong>
+            <p>{formatCount(pointsWithScore.length)}</p>
+          </article>
+          <article className="mini-panel">
+            <strong>Corr. score vs días</strong>
+            <p>{formatMaybeMetric(classification.priority_score_corr, 3)}</p>
+          </article>
+        </div>
+      </div>
+
+      <div className="grid-2">
+        <HistogramByBandPanel predictions={predictions} bandLabels={bandLabels} testLabel={testLabel} />
+        <ActualToPredictedFlowPanel predictions={predictions} bandLabels={bandLabels} testLabel={testLabel} />
+      </div>
+
+      <PriorityScoreDistributionPanel predictions={predictions} bandLabels={bandLabels} testLabel={testLabel} />
+    </section>
   );
 }
 
@@ -374,9 +1040,9 @@ function classifyFeatures(featureNames: string[]): FeatureGroupDef[] {
       color: '#0f9b72',
       bgColor: 'rgba(15, 155, 114, 0.08)',
       description:
-        'Mediana de DaysInDeposit del grupo en TODAS las semanas anteriores al registro actual. Para un contenedor en semana 5, usa datos de semanas 1-4. No trackea el mismo contenedor: usa el comportamiento agregado del grupo.',
+        'Mediana de DaysInDeposit del grupo en TODAS las semanas anteriores al registro actual. Para una fila del holdout temporal, usa solo semanas previas del entrenamiento. No trackea el mismo contenedor: usa el comportamiento agregado del grupo.',
       example:
-        'Owner_lag_median para Owner=7 en semana 5: mediana historica de 3 dias (basada en ~3200 contenedores de semanas 1-4). La correlacion con dias reales mejora con mas historia: 1 semana→0.03, 4 semanas→0.59.',
+        'Owner_lag_median para Owner=7: mediana historica de 3 dias calculada con todas las semanas previas disponibles del train. A mayor historia acumulada, la estimacion suele ser mas estable.',
       features: lagMedian,
     });
 
@@ -400,7 +1066,7 @@ function classifyFeatures(featureNames: string[]): FeatureGroupDef[] {
       description:
         'Diferencia de mediana entre las 2 semanas mas recientes. Captura si un grupo esta acelerando o frenando su retiro. Valor positivo = se estan quedando mas, negativo = se estan yendo mas rapido.',
       example:
-        'Owner_lag_trend = -3.0 para Owner 7: la mediana bajo 3 dias entre semana 3 y 4, esta retirando mas rapido. Owner_lag_trend = +15 para Owner 4: salto de 15 dias, algo cambio (buque atrasado?).',
+        'Owner_lag_trend = -3.0 para Owner 7: la mediana bajo 3 dias entre las 2 semanas previas mas recientes, esta retirando mas rapido. Owner_lag_trend = +15 para Owner 4: salto fuerte, algo cambio en su operacion.',
       features: lagTrend,
     });
 
@@ -494,6 +1160,7 @@ function MethodologySection({ classification }: Props) {
 
   const featureNames = classification.feature_names ?? [];
   const featureGroups = classifyFeatures(featureNames);
+  const methodologyExportRef = useRef<HTMLDivElement | null>(null);
 
   return (
     <div className="panel table-panel">
@@ -504,8 +1171,15 @@ function MethodologySection({ classification }: Props) {
             Detalle paso a paso de cada decision tomada en el pipeline de clasificacion.
           </span>
         </div>
+        <button
+          type="button"
+          className="chart-export-btn"
+          onClick={() => void exportSectionPng(methodologyExportRef.current, 'metodologia-clasificacion', 'methodology')}
+        >
+          Descargar PNG HD
+        </button>
       </div>
-      <div style={{ padding: '1rem 1.5rem 1.5rem' }}>
+      <div ref={methodologyExportRef} className="chart-export-area" style={{ padding: '1rem 1.5rem 1.5rem' }}>
 
         {/* Origin explanation */}
         <div
@@ -529,10 +1203,10 @@ function MethodologySection({ classification }: Props) {
             que ya existe en los datos pero en una forma que los modelos pueden procesar.
           </p>
           <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: 1.7 }}>
-            Ejemplo: para un contenedor de <code>Owner=7, Size=2, Type=DRY</code> en semana 5, se calcula:
+            Ejemplo: para un contenedor de <code>Owner=7, Size=2, Type=DRY</code> en el holdout temporal, se calcula:
             "la mediana historica de Owner 7 fue 3 dias" (<code>Owner_target_enc=3.0</code>),
             "Owner 7 representa el 49% del trafico" (<code>Owner_freq=0.49</code>),
-            "en semanas 1-4 la mediana de Owner 7 fue 3 dias" (<code>Owner_lag_median=3.0</code>),
+            "en las semanas previas del train la mediana de Owner 7 fue 3 dias" (<code>Owner_lag_median=3.0</code>),
             "la tendencia bajo 3 dias" (<code>Owner_lag_trend=-3.0</code>). Todo calculado sin mirar la
             semana que se predice (sin leakage temporal).
           </p>
@@ -598,16 +1272,21 @@ function MethodologySection({ classification }: Props) {
   );
 }
 
-export default function MlClassificationPanel({ classification }: Props) {
+export default function MlClassificationPanel({ classification, split }: Props) {
   const bestModel = classification.models.find((m) => m.model_name === classification.best_model && m.available);
   const bandLabels = classification.bands.map((b) => b.label);
+  const summaryExportRef = useRef<HTMLDivElement | null>(null);
+  const bandsExportRef = useRef<HTMLDivElement | null>(null);
+  const modelsExportRef = useRef<HTMLDivElement | null>(null);
+  const confusionExportRef = useRef<HTMLDivElement | null>(null);
+  const testLabel = split?.test_weeks.join('-') || 'holdout';
 
   return (
     <section className="stack">
       {/* Hero / Narrative */}
       <div className="panel" style={{ borderLeft: '4px solid #0f9b72' }}>
         <div className="section-header">
-          <div>
+          <div ref={summaryExportRef} className="chart-export-area">
             <h3>Clasificacion por bandas de prioridad</h3>
             <p style={{ fontSize: '1.05rem', lineHeight: 1.6, margin: '0.5rem 0 0' }}>
               {classification.narrative}
@@ -619,6 +1298,13 @@ export default function MlClassificationPanel({ classification }: Props) {
               ) : null}
             </p>
           </div>
+          <button
+            type="button"
+            className="chart-export-btn"
+            onClick={() => void exportSectionPng(summaryExportRef.current, `clasificacion-prioridad-${testLabel}`, 'classification summary')}
+          >
+            Descargar PNG HD
+          </button>
         </div>
       </div>
 
@@ -627,13 +1313,22 @@ export default function MlClassificationPanel({ classification }: Props) {
         <div className="table-header">
           <div>
             <h3>Bandas de prioridad</h3>
-            <span className="muted">Distribucion de contenedores por banda en train y test.</span>
+            <span className="muted">Distribucion por banda entre entrenamiento historico y holdout temporal.</span>
           </div>
+          <button
+            type="button"
+            className="chart-export-btn"
+            onClick={() => void exportSectionPng(bandsExportRef.current, `bandas-prioridad-${testLabel}`, 'priority bands')}
+          >
+            Descargar PNG HD
+          </button>
         </div>
-        <div style={{ padding: '1rem 1.5rem 1.5rem' }}>
-          <BandCards classification={classification} />
+        <div ref={bandsExportRef} className="chart-export-area" style={{ padding: '1rem 1.5rem 1.5rem' }}>
+          <BandCards classification={classification} split={split} />
         </div>
       </div>
+
+      <AnalyticalVisualizationsSection classification={classification} split={split} />
 
       {/* Classifier comparison table */}
       <div className="panel table-panel">
@@ -644,8 +1339,17 @@ export default function MlClassificationPanel({ classification }: Props) {
               Accuracy = acierto exacto de banda. Adj. Accuracy = acierto o error por 1 banda adyacente.
             </span>
           </div>
+          <button
+            type="button"
+            className="chart-export-btn"
+            onClick={() => void exportSectionPng(modelsExportRef.current, `modelos-clasificadores-${testLabel}`, 'classifier models')}
+          >
+            Descargar PNG HD
+          </button>
         </div>
-        <ClassifierTable models={classification.models} bestModel={classification.best_model} />
+        <div ref={modelsExportRef} className="chart-export-area">
+          <ClassifierTable models={classification.models} bestModel={classification.best_model} />
+        </div>
       </div>
 
       {/* Confusion matrix of best model */}
@@ -658,15 +1362,22 @@ export default function MlClassificationPanel({ classification }: Props) {
                 Filas = banda real, columnas = banda predicha. Diagonal = aciertos.
               </span>
             </div>
+            <button
+              type="button"
+              className="chart-export-btn"
+              onClick={() => void exportSectionPng(confusionExportRef.current, `matriz-confusion-${bestModel.model_name}-${testLabel}`, 'confusion matrix')}
+            >
+              Descargar PNG HD
+            </button>
           </div>
-          <div style={{ padding: '1rem 1.5rem 1.5rem' }}>
+          <div ref={confusionExportRef} className="chart-export-area" style={{ padding: '1rem 1.5rem 1.5rem' }}>
             <ConfusionMatrix model={bestModel} bandLabels={bandLabels} />
           </div>
         </div>
       ) : null}
 
       {/* Methodology section */}
-      <MethodologySection classification={classification} />
+      <MethodologySection classification={classification} split={split} />
     </section>
   );
 }

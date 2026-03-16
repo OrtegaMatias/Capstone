@@ -142,7 +142,22 @@ class FrameworkService:
         """Return cached ML results or None if no cache exists."""
         cache_path = self.workspace_dir / week_id / "ml_overview.json"
         if cache_path.exists():
-            return json.loads(cache_path.read_text(encoding="utf-8"))
+            try:
+                cached = json.loads(cache_path.read_text(encoding="utf-8"))
+            except Exception:
+                cache_path.unlink(missing_ok=True)
+                return None
+
+            if not isinstance(cached, dict):
+                cache_path.unlink(missing_ok=True)
+                return None
+
+            expected_fingerprint = self._ml_cache_fingerprint(week_id)
+            if cached.get("fingerprint") != expected_fingerprint or not isinstance(cached.get("payload"), dict):
+                cache_path.unlink(missing_ok=True)
+                return None
+
+            return cached["payload"]
         return None
 
     def run_week_ml_with_progress(
@@ -218,7 +233,11 @@ class FrameworkService:
         cache_dir = self.workspace_dir / week_id
         cache_dir.mkdir(parents=True, exist_ok=True)
         cache_path = cache_dir / "ml_overview.json"
-        cache_path.write_text(json.dumps(payload, default=str, ensure_ascii=False), encoding="utf-8")
+        cache_payload = {
+            "fingerprint": self._ml_cache_fingerprint(week_id),
+            "payload": payload,
+        }
+        cache_path.write_text(json.dumps(cache_payload, default=str, ensure_ascii=False), encoding="utf-8")
 
     def get_week_notes(self, week_id: str) -> dict[str, Any]:
         self._get_week_definition(week_id)
@@ -460,6 +479,24 @@ class FrameworkService:
             in_bytes=in_bytes,
             out_bytes=out_bytes,
         )
+        self._invalidate_week_derivatives(week["week_id"])
+
+    def _ml_cache_fingerprint(self, week_id: str) -> str:
+        metadata_path = self.workspace_store.metadata_path(week_id)
+        if not metadata_path.exists():
+            return ""
+        digest = hashlib.sha256()
+        digest.update(metadata_path.read_bytes())
+        return digest.hexdigest()
+
+    def _invalidate_week_derivatives(self, week_id: str) -> None:
+        paths = [
+            self.workspace_store.report_markdown_path(week_id),
+            self.workspace_store.report_html_path(week_id),
+            self.workspace_dir / week_id / "ml_overview.json",
+        ]
+        for path in paths:
+            path.unlink(missing_ok=True)
 
     def _build_week_summary(self, week: dict[str, Any]) -> dict[str, Any]:
         self.workspace_store.ensure_week_dir(week["week_id"])

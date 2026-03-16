@@ -545,6 +545,8 @@ export type MlMetricSummary = {
   r2?: number | null;
   medae?: number | null;
   baseline_mae?: number | null;
+  msle?: number | null;
+  mape?: number | null;
 };
 
 export type MlPredictionSample = {
@@ -694,6 +696,19 @@ export type ClassificationPerClass = {
   support: number;
 };
 
+export type ClassificationPredictionPoint = {
+  row_id: number;
+  week: string;
+  actual_days: number;
+  actual_band: string;
+  predicted_band: string;
+  correct: boolean;
+  adjacent_hit: boolean;
+  predicted_confidence?: number | null;
+  priority_score?: number | null;
+  band_probabilities: Record<string, number>;
+};
+
 export type ClassificationModelResult = {
   model_name: string;
   accuracy: number;
@@ -718,6 +733,7 @@ export type PriorityClassificationResult = {
   bands: PriorityBand[];
   band_distribution: Record<string, Record<string, number>>;
   models: ClassificationModelResult[];
+  best_model_predictions: ClassificationPredictionPoint[];
   best_model: string;
   baseline_accuracy: number;
   narrative: string;

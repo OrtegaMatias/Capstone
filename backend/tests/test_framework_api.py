@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -154,6 +155,29 @@ def test_week_2_ml_overview_uses_temporal_holdout(framework_client) -> None:
     assert "## Transformacion del target" in report_payload["markdown_content"]
     assert "## Benchmark de preprocesamiento" in report_payload["markdown_content"]
     assert "## Segmentacion representativa" in report_payload["markdown_content"]
+
+
+def test_week_2_invalidates_legacy_ml_cache(framework_client, framework_repo_root: Path) -> None:
+    cache_path = framework_repo_root / "workspace/week-2/ml_overview.json"
+    cache_path.write_text(
+        json.dumps(
+            {
+                "week_id": "week-2",
+                "split": {"train_weeks": ["1"], "test_weeks": ["2"], "train_rows": 1, "test_rows": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cached = framework_client.get("/api/v1/weeks/week-2/ml/cached")
+    assert cached.status_code == 204
+    assert not cache_path.exists()
+
+    overview = framework_client.get("/api/v1/weeks/week-2/ml/overview")
+    assert overview.status_code == 200
+    cache_payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert "fingerprint" in cache_payload
+    assert cache_payload["payload"]["split"]["test_weeks"] == ["5"]
 
 
 def test_week_notes_persist_inside_workspace(framework_client, framework_repo_root: Path) -> None:

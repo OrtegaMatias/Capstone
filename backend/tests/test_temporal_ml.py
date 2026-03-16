@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from app.stats import ml as ml_module
 from app.stats.ml import compute_temporal_ml_overview
@@ -107,3 +108,37 @@ def test_temporal_ml_overview_groups_small_segments_into_other_and_builds_hierar
     assert hierarchical["tier_usage"]
     assert sum(item["count"] for item in hierarchical["tier_usage"]) == payload["split"]["test_rows"]
     assert hierarchical["metrics"]["mae"] is not None
+
+
+def test_priority_classification_exposes_best_model_prediction_rows() -> None:
+    payload = compute_temporal_ml_overview(_build_temporal_df())
+
+    split = payload["split"]
+    classification = payload["priority_classification"]
+    band_labels = [band["label"] for band in classification["bands"]]
+    label_to_index = {label: index for index, label in enumerate(band_labels)}
+    predictions = classification["best_model_predictions"]
+
+    assert len(predictions) == split["test_rows"]
+
+    for point in predictions:
+        assert point["row_id"] >= 0
+        assert point["week"] in split["test_weeks"]
+        assert point["actual_band"] in band_labels
+        assert point["predicted_band"] in band_labels
+        assert point["correct"] is (point["actual_band"] == point["predicted_band"])
+
+        actual_index = label_to_index[point["actual_band"]]
+        predicted_index = label_to_index[point["predicted_band"]]
+        assert point["adjacent_hit"] is (abs(actual_index - predicted_index) <= 1)
+
+        band_probabilities = point["band_probabilities"]
+        if band_probabilities:
+            assert list(band_probabilities.keys()) == band_labels
+            assert sum(band_probabilities.values()) == pytest.approx(1.0, abs=1e-5)
+            assert point["predicted_confidence"] == pytest.approx(max(band_probabilities.values()), abs=1e-6)
+            assert point["priority_score"] is not None
+            assert 1.0 <= point["priority_score"] <= float(len(band_labels))
+        else:
+            assert point["predicted_confidence"] is None
+            assert point["priority_score"] is None

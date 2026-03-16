@@ -96,6 +96,83 @@ def _band_distribution(series: pd.Series, labels: list[str]) -> dict[str, int]:
     return {label: int(counts.get(label, 0)) for label in labels}
 
 
+def _is_adjacent_hit(actual_band: str, predicted_band: str, labels: list[str]) -> bool:
+    label_to_idx = {label: index for index, label in enumerate(labels)}
+    actual_idx = label_to_idx.get(actual_band)
+    predicted_idx = label_to_idx.get(predicted_band)
+    if actual_idx is None or predicted_idx is None:
+        return False
+    return abs(actual_idx - predicted_idx) <= 1
+
+
+def _classification_prediction_rows(
+    test_df: pd.DataFrame,
+    *,
+    target_col: str,
+    week_col: str,
+    labels: list[str],
+    actual_bands: np.ndarray,
+    predicted_bands: np.ndarray,
+    probabilities: np.ndarray | None = None,
+    probability_labels: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    row_ids = (
+        test_df["Unnamed: 0"].astype(int).tolist()
+        if "Unnamed: 0" in test_df.columns
+        else test_df.index.astype(int).tolist()
+    )
+    week_values = test_df[week_col].astype(int).astype(str).tolist()
+    actual_days = test_df[target_col].astype(float).tolist()
+
+    normalized_probabilities: list[dict[str, float]] = []
+    if probabilities is not None and probability_labels is not None and len(probability_labels) == probabilities.shape[1]:
+        label_to_probability_index = {label: index for index, label in enumerate(probability_labels)}
+        for row_index in range(probabilities.shape[0]):
+            row = probabilities[row_index]
+            normalized_probabilities.append(
+                {
+                    label: round(float(row[label_to_probability_index[label]]), 6)
+                    if label in label_to_probability_index
+                    else 0.0
+                    for label in labels
+                }
+            )
+    else:
+        normalized_probabilities = [{} for _ in range(len(actual_bands))]
+
+    rows: list[dict[str, Any]] = []
+    for row_id, week_value, actual_day, actual_band, predicted_band, band_probabilities in zip(
+        row_ids,
+        week_values,
+        actual_days,
+        actual_bands.tolist(),
+        predicted_bands.tolist(),
+        normalized_probabilities,
+        strict=False,
+    ):
+        predicted_confidence = max(band_probabilities.values()) if band_probabilities else None
+        priority_score = (
+            sum(band_probabilities.get(label, 0.0) * (index + 1) for index, label in enumerate(labels))
+            if band_probabilities
+            else None
+        )
+        rows.append(
+            {
+                "row_id": int(row_id),
+                "week": str(week_value),
+                "actual_days": float(actual_day),
+                "actual_band": str(actual_band),
+                "predicted_band": str(predicted_band),
+                "correct": str(actual_band) == str(predicted_band),
+                "adjacent_hit": _is_adjacent_hit(str(actual_band), str(predicted_band), labels),
+                "predicted_confidence": round(float(predicted_confidence), 6) if predicted_confidence is not None else None,
+                "priority_score": round(float(priority_score), 6) if priority_score is not None else None,
+                "band_probabilities": band_probabilities,
+            }
+        )
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # Feature engineering (computed on train, applied to train+test)
 # ---------------------------------------------------------------------------
@@ -456,6 +533,7 @@ def compute_priority_classification(
         )))
 
     model_results: list[dict[str, Any]] = []
+    prediction_rows_by_model: dict[str, list[dict[str, Any]]] = {}
     best_accuracy = -1.0
     best_model_name = ""
 
@@ -478,6 +556,28 @@ def compute_priority_classification(
                 preds = np.array([int_to_label[int(v)] for v in raw_preds])
             else:
                 preds = raw_preds
+
+            class_labels: list[str] | None = None
+            probabilities: np.ndarray | None = None
+            if hasattr(clf, "predict_proba"):
+                raw_probabilities = clf.predict_proba(X_test)
+                class_order = list(clf.classes_)
+                if use_int:
+                    class_labels = [int_to_label[int(c)] for c in class_order]
+                else:
+                    class_labels = [str(c) for c in class_order]
+                probabilities = np.asarray(raw_probabilities, dtype=float)
+
+            prediction_rows_by_model[name] = _classification_prediction_rows(
+                test_df,
+                target_col=target_col,
+                week_col=week_col,
+                labels=labels,
+                actual_bands=y_test,
+                predicted_bands=preds,
+                probabilities=probabilities,
+                probability_labels=class_labels,
+            )
 
             acc = float(accuracy_score(y_test, preds))
             adj_acc = _adjacent_accuracy(y_test, preds, labels)
@@ -524,6 +624,7 @@ def compute_priority_classification(
                 "available": False,
                 "notes": [f"Error: {exc}"],
             })
+            prediction_rows_by_model[name] = []
 
     _progress("Clasificadores entrenados")
 
@@ -557,32 +658,18 @@ def compute_priority_classification(
             best_mae = m["band_mae"]
             break
 
-    # --- Priority score (continuous) from best model's predict_proba ---
-    best_clf = None
-    for name, clf in classifier_specs:
-        if name == best_model_name:
-            best_clf = clf
-            break
+    best_model_predictions = prediction_rows_by_model.get(best_model_name, [])
 
+    # --- Priority score (continuous) from best model's predict_proba ---
     priority_score_corr: float | None = None
     priority_score_stats: dict[str, float] = {}
-    if best_clf is not None and hasattr(best_clf, "predict_proba"):
+    if best_model_predictions:
         try:
-            proba = best_clf.predict_proba(X_test)
-            class_order = list(best_clf.classes_)
-            # Map classes back to string labels
-            if best_model_name in _needs_int_labels:
-                class_labels = [int_to_label[int(c)] for c in class_order]
-            else:
-                class_labels = [str(c) for c in class_order]
-            priority_w = {lbl: i + 1 for i, lbl in enumerate(labels)}
-            scores = []
-            for i in range(len(X_test)):
-                p = {class_labels[j]: float(proba[i][j]) for j in range(len(class_labels))}
-                score = sum(p.get(lbl, 0) * priority_w[lbl] for lbl in labels)
-                scores.append(score)
-            scores_arr = np.array(scores)
-            actual_days = test_df[target_col].to_numpy(dtype=float)
+            scored_points = [item for item in best_model_predictions if item["priority_score"] is not None]
+            scores_arr = np.array([item["priority_score"] for item in scored_points], dtype=float)
+            actual_days = np.array([item["actual_days"] for item in scored_points], dtype=float)
+            if scores_arr.size == 0 or actual_days.size == 0:
+                raise ValueError("No priority scores available")
             corr_val = float(np.corrcoef(scores_arr, actual_days)[0, 1])
             priority_score_corr = round(corr_val, 4) if np.isfinite(corr_val) else None
             priority_score_stats = {
@@ -635,6 +722,7 @@ def compute_priority_classification(
         "bands": band_info,
         "band_distribution": {"train": train_dist, "test": test_dist},
         "models": model_results,
+        "best_model_predictions": best_model_predictions,
         "best_model": best_model_name,
         "baseline_accuracy": round(baseline_accuracy, 4),
         "feature_names": eng_feature_names,
@@ -880,6 +968,7 @@ def _empty_classification(
         "bands": band_info,
         "band_distribution": {"train": dist, "test": dist},
         "models": [],
+        "best_model_predictions": [],
         "best_model": "",
         "baseline_accuracy": 0.0,
         "feature_names": [],

@@ -217,6 +217,19 @@ class ClassificationPerClass(BaseModel):
     support: int
 
 
+class ClassificationPredictionPoint(BaseModel):
+    row_id: int
+    week: str
+    actual_days: float
+    actual_band: str
+    predicted_band: str
+    correct: bool
+    adjacent_hit: bool
+    predicted_confidence: float | None = None
+    priority_score: float | None = None
+    band_probabilities: dict[str, float] = {}
+
+
 class ClassificationModelResult(BaseModel):
     model_name: str
     accuracy: float
@@ -241,6 +254,7 @@ class PriorityClassificationResult(BaseModel):
     bands: list[PriorityBand]
     band_distribution: dict[str, dict[str, int]]
     models: list[ClassificationModelResult]
+    best_model_predictions: list[ClassificationPredictionPoint] = []
     best_model: str
     baseline_accuracy: float
     narrative: str

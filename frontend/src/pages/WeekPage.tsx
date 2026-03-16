@@ -323,7 +323,7 @@ export default function WeekPage() {
               </div>
             ) : null}
             {mlData.priority_classification ? (
-              <MlClassificationPanel classification={mlData.priority_classification} />
+              <MlClassificationPanel classification={mlData.priority_classification} split={mlData.split} />
             ) : null}
             <details className="panel">
               <summary><h3 style={{ display: 'inline' }}>Analisis de regresion (comparacion)</h3></summary>

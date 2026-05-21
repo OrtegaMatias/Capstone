@@ -22,7 +22,7 @@ def test_framework_summary_bootstraps_workspace(framework_client, framework_repo
     assert [week["week_id"] for week in payload["weeks"][:2]] == ["week-1", "week-2"]
     assert payload["weeks"][0]["status"] == "active"
     assert payload["weeks"][1]["status"] == "active"
-    assert payload["weeks"][2]["status"] == "scaffolded"
+    assert payload["weeks"][2]["status"] == "active"
 
     assert (framework_repo_root / "workspace/week-1/canonical.csv").exists()
     assert (framework_repo_root / "workspace/week-1/analysis_in_imputed.csv").exists()
@@ -30,6 +30,17 @@ def test_framework_summary_bootstraps_workspace(framework_client, framework_repo
     assert (framework_repo_root / "workspace/week-1/optics_in.json").exists()
     assert (framework_repo_root / "workspace/week-1/optics_out.json").exists()
     assert (framework_repo_root / "workspace/week-2/canonical.csv").exists()
+    assert (framework_repo_root / "workspace/week-3/canonical.csv").exists()
+    assert (framework_repo_root / "workspace/week-3/optimization_model.json").exists()
+    assert (framework_repo_root / "workspace/week-3/weekly_balance.csv").exists()
+    assert (framework_repo_root / "workspace/week-3/official_model.mod").exists()
+    assert (framework_repo_root / "workspace/week-3/official_model.dat").exists()
+    assert (framework_repo_root / "workspace/week-3/baseline_validation.mod").exists()
+    assert (framework_repo_root / "workspace/week-3/baseline_validation.dat").exists()
+    assert (framework_repo_root / "workspace/week-3/cplex_segregations.csv").exists()
+    assert (framework_repo_root / "workspace/week-3/baseline_segregations.csv").exists()
+    assert (framework_repo_root / "workspace/week-3/cplex_ml_signals.csv").exists()
+    assert (framework_repo_root / "workspace/week-3/baseline_inventory_seed.csv").exists()
     assert (framework_repo_root / "workspace/week-3/report.md").exists()
 
 
@@ -178,6 +189,148 @@ def test_week_2_invalidates_legacy_ml_cache(framework_client, framework_repo_roo
     cache_payload = json.loads(cache_path.read_text(encoding="utf-8"))
     assert "fingerprint" in cache_payload
     assert cache_payload["payload"]["split"]["test_weeks"] == ["5"]
+
+
+def test_week_3_optimization_payload_is_available(framework_client, framework_repo_root: Path) -> None:
+    response = framework_client.get("/api/v1/weeks/week-3/optimization-model")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["summary"]["bay_count"] == 77
+    assert payload["summary"]["planning_weeks"] == 33
+    assert payload["summary"]["total_capacity_teu"] > 5000
+    assert payload["summary"]["peak_active_teu"] > payload["summary"]["total_capacity_teu"]
+    assert payload["ml_integration"]["urgency_rule"] == "u_c = P(Alta) + 0.5 * P(Media)"
+    assert payload["owner_selections"]
+    assert any(row["decision"] == "owner" for row in payload["owner_selections"])
+    assert payload["academic_formulation"]["dimensions"]
+    assert payload["academic_formulation"]["given_data"]
+    assert payload["academic_formulation"]["parameters"]
+    assert payload["academic_formulation"]["decision_variables"]
+    assert payload["academic_formulation"]["objective"]["equation_latex"]
+    assert payload["academic_formulation"]["constraints"]
+    assert payload["academic_formulation"]["week4_extensions"]
+    assert payload["notation_bridge"]["equations"]
+    assert payload["notation_bridge"]["aggregation_rules"]
+    assert payload["notation_bridge"]["segregation_samples"]
+    assert payload["cplex_export"]["version"] == "week3_cplex_official_v2"
+    assert payload["cplex_export"]["j_count"] == 88
+    assert payload["cplex_export"]["jd_count"] == 44
+    assert payload["cplex_export"]["jo_count"] == 44
+    assert payload["cplex_export"]["k_count"] == 44
+    assert payload["cplex_export"]["owners"] == [str(index) for index in range(1, 12)]
+    assert payload["cplex_export"]["lambda_ml"] == 1.0
+    assert payload["cplex_export"]["w_urg"] == 2.0
+    assert payload["cplex_export"]["w_slow"] == 1.0
+    assert "uBar" in payload["cplex_export"]["ml_signal_rule"]
+    assert payload["cplex_export"]["sample_pairs"]
+    assert payload["baseline_export"]["version"] == "week3_baseline_validation_v6"
+    assert payload["baseline_export"]["j_count"] == 44
+    assert payload["baseline_export"]["b_count"] == 77
+    assert payload["baseline_export"]["c_labels"] == ["D", "O"]
+    assert payload["baseline_export"]["validated_week"] == 1
+    assert payload["baseline_export"]["inspection_mapping"] == "I -> D"
+    assert payload["baseline_export"]["sample_segregations"]
+    assert payload["container_samples"]
+    first_dimension = payload["academic_formulation"]["dimensions"][0]
+    assert "symbol_latex" in first_dimension
+    assert "description" in first_dimension
+    objective = payload["academic_formulation"]["objective"]
+    assert objective["components"]
+    first_sample = payload["container_samples"][0]
+    assert 0.0 <= first_sample["u_c"] <= 1.0
+    assert first_sample["penalty_examples"]
+    first_penalty = first_sample["penalty_examples"][0]
+    assert 0.0 <= first_penalty["q_b"] <= 1.0
+    assert first_penalty["p_cb"] >= 0.0
+    first_segregation = payload["notation_bridge"]["segregation_samples"][0]
+    assert 0.0 <= first_segregation["avg_u_jt"] <= 1.0
+    assert first_segregation["alpha_l"] == 1
+    assert any(warning["code"] == "yard_capacity_exceeded" for warning in payload["warnings"])
+    assert "Conjuntos" not in payload["formulation"]  # schema should stay structured
+
+    report = framework_client.get("/api/v1/weeks/week-3/report")
+    assert report.status_code == 200
+    report_payload = report.json()
+    assert "## Dimensiones e indices" in report_payload["markdown_content"]
+    assert "## Datos observados" in report_payload["markdown_content"]
+    assert "## Parametros" in report_payload["markdown_content"]
+    assert "## Variables" in report_payload["markdown_content"]
+    assert "## Funcion objetivo" in report_payload["markdown_content"]
+    assert "## Restricciones" in report_payload["markdown_content"]
+    assert "## Puente con la capa operacional" in report_payload["markdown_content"]
+    assert "## Export CPLEX oficial" in report_payload["markdown_content"]
+    assert "## Baseline de validacion del primer .mod" in report_payload["markdown_content"]
+    assert "## Supuestos y extensiones" in report_payload["markdown_content"]
+    assert "$$\\min Z =" in report_payload["markdown_content"]
+    assert "$$u_c = P_c(\\mathrm{Alta}) + 0.5\\,P_c(\\mathrm{Media})$$" in report_payload["markdown_content"]
+    assert "<h1>Semana 3 - Modelamiento matematico</h1>" in report_payload["html_content"]
+
+    dat_path = framework_repo_root / "workspace/week-3/official_model.dat"
+    dat_text = dat_path.read_text(encoding="utf-8")
+    mod_path = framework_repo_root / "workspace/week-3/official_model.mod"
+    mod_text = mod_path.read_text(encoding="utf-8")
+    assert "J = 1..88;" in dat_text
+    assert "B = 1..77;" in dat_text
+    assert "T = 1..33;" in dat_text
+    assert "JD = {1, 3, 5" in dat_text
+    assert "JO = {2, 4, 6" in dat_text
+    assert "K = {" in dat_text
+    assert "Gamma =" in dat_text
+    assert "tau =" in dat_text
+    assert "q =" in dat_text
+    assert "uBar =" in dat_text
+    assert "lambdaML = 1.000000;" in dat_text
+    assert "wUrg = 2.000000;" in dat_text
+    assert "wSlow = 1.000000;" in dat_text
+    assert "CFbase =" in dat_text
+    assert "range J = ...;" in mod_text
+    assert "tuple Transition" in mod_text
+    assert "float tau[J] = ...;" in mod_text
+    assert "float q[B] = ...;" in mod_text
+    assert "float uBar[J][T] = ...;" in mod_text
+    assert "float CFbase[J][B] = ...;" in mod_text
+    assert "dvar int+ r[K][T];" in mod_text
+    assert "forall(j in JD, t in T)" in mod_text
+    assert "CFbase[j][b] + lambdaML" in mod_text
+
+    baseline_dat_path = framework_repo_root / "workspace/week-3/baseline_validation.dat"
+    baseline_dat_text = baseline_dat_path.read_text(encoding="utf-8")
+    baseline_mod_path = framework_repo_root / "workspace/week-3/baseline_validation.mod"
+    baseline_mod_text = baseline_mod_path.read_text(encoding="utf-8")
+    assert "J = 1..44;" in baseline_dat_text
+    assert "B = 1..77;" in baseline_dat_text
+    assert 'C = {"D", "O"};' in baseline_dat_text
+    assert "dem =" in baseline_dat_text
+    assert "Inv0 =" in baseline_dat_text
+    assert "F = 999999;" in baseline_dat_text
+    assert '{string} C = {"D", "O"};' in baseline_mod_text
+    assert "int dem[J][C] = ...;" in baseline_mod_text
+    assert "int Inv0[J][C] = ...;" in baseline_mod_text
+    assert "dvar int+ s0[J][B][C];" in baseline_mod_text
+    assert "sum(b in B) s0[j][b][c] == Inv0[j][c];" in baseline_mod_text
+    assert 'I_pos[j]["D"][b]' in baseline_mod_text
+    assert 'I_pos[j]["O"][b]' in baseline_mod_text
+
+    segregation_df = pd.read_csv(framework_repo_root / "workspace/week-3/cplex_segregations.csv")
+    assert segregation_df.shape[0] == 88
+    assert set(segregation_df["subset"]) == {"JD", "JO"}
+    assert segregation_df["owner"].astype(str).nunique() == 11
+    assert "tau" in segregation_df.columns
+    ml_signal_df = pd.read_csv(framework_repo_root / "workspace/week-3/cplex_ml_signals.csv")
+    assert ml_signal_df.shape[0] == 88 * 33
+    assert ml_signal_df["j"].nunique() == 88
+    assert ml_signal_df["week"].nunique() == 33
+    assert ml_signal_df["uBar"].between(0.0, 1.0).all()
+    assert set(ml_signal_df["signal_origin"].unique()) <= {"weekly", "group_mean_fallback"}
+
+    baseline_segregation_df = pd.read_csv(framework_repo_root / "workspace/week-3/baseline_segregations.csv")
+    assert baseline_segregation_df.shape[0] == 44
+    assert baseline_segregation_df["owner"].astype(str).nunique() == 11
+    assert baseline_segregation_df["RF"].isin([0, 1]).all()
+    baseline_inventory_df = pd.read_csv(framework_repo_root / "workspace/week-3/baseline_inventory_seed.csv")
+    positive_inventory = baseline_inventory_df[baseline_inventory_df["assigned_units"].fillna(0) > 0]
+    assert positive_inventory["bay_id"].notna().all()
 
 
 def test_week_notes_persist_inside_workspace(framework_client, framework_repo_root: Path) -> None:

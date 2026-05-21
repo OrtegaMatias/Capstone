@@ -7,6 +7,20 @@ type Props = {
   onRefresh: () => Promise<void>;
 };
 
+function stripCplexExportSection(markdown: string, weekId?: string): string {
+  if (weekId !== 'week-3') return markdown;
+  const startPattern = /^## Export CPLEX oficial\s*$/m;
+  const match = markdown.match(startPattern);
+  if (!match || match.index == null) return markdown;
+  const startIndex = match.index;
+  const rest = markdown.slice(startIndex + match[0].length);
+  const nextHeadingMatch = rest.match(/\n##\s+/);
+  if (!nextHeadingMatch || nextHeadingMatch.index == null) {
+    return markdown.slice(0, startIndex).trimEnd();
+  }
+  return (markdown.slice(0, startIndex) + rest.slice(nextHeadingMatch.index + 1)).trimEnd();
+}
+
 function triggerDownload(filename: string, content: string, mimeType: string): void {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
@@ -18,6 +32,8 @@ function triggerDownload(filename: string, content: string, mimeType: string): v
 }
 
 export default function ReportPanel({ report, loading, refreshing, onRefresh }: Props) {
+  const previewMarkdown = report ? stripCplexExportSection(report.markdown_content, report.week_id) : '';
+
   return (
     <div className="panel">
       <div className="section-header">
@@ -49,7 +65,7 @@ export default function ReportPanel({ report, loading, refreshing, onRefresh }: 
       {report ? (
         <>
           <small className="muted">Ultima actualizacion: {report.updated_at ?? 'sin datos'}</small>
-          <pre className="code-block report-preview">{report.markdown_content}</pre>
+          <pre className="code-block report-preview">{previewMarkdown}</pre>
         </>
       ) : null}
     </div>

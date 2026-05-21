@@ -8,7 +8,14 @@ from fastapi.responses import Response, StreamingResponse
 
 from app.schemas.academic_eda import WeekAcademicEDAResponse, WeekClusteringResponse
 from app.schemas.dataset import PreviewResponse
-from app.schemas.framework import FrameworkSummary, MlEvaluationSummary, WeekConfig, WeekReportSummary
+from app.schemas.framework import (
+    FrameworkSummary,
+    MlEvaluationSummary,
+    WeekArtifactTextResponse,
+    WeekConfig,
+    WeekOptimizationPayload,
+    WeekReportSummary,
+)
 from app.schemas.notes import NotesPayload, NotesResponse, NotesSaveResponse
 from app.services.framework_service import framework_service
 
@@ -113,6 +120,15 @@ def get_week_ml_overview(week_id: str) -> MlEvaluationSummary:
     return MlEvaluationSummary(**payload)
 
 
+@router.get("/weeks/{week_id}/optimization-model", response_model=WeekOptimizationPayload)
+def get_week_optimization_model(week_id: str) -> WeekOptimizationPayload:
+    try:
+        payload = framework_service.get_week_optimization_model(week_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return WeekOptimizationPayload(**payload)
+
+
 @router.get("/weeks/{week_id}/notes", response_model=NotesResponse)
 def get_week_notes(week_id: str) -> NotesResponse:
     try:
@@ -147,3 +163,14 @@ def get_week_report(week_id: str) -> WeekReportSummary:
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return WeekReportSummary(**payload)
+
+
+@router.get("/weeks/{week_id}/artifacts/text", response_model=WeekArtifactTextResponse)
+def get_week_artifact_text(week_id: str, filename: str = Query(..., min_length=1)) -> WeekArtifactTextResponse:
+    try:
+        payload = framework_service.get_week_artifact_text(week_id, filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return WeekArtifactTextResponse(**payload)

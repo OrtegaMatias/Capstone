@@ -151,27 +151,98 @@
       "week_number": 3,
       "title": "Semana 3",
       "stage_name": "Modelamiento matematico",
-      "status": "scaffolded",
-      "summary": "Definicion inicial del modelo matematico a partir del conocimiento de datos y ML.",
-      "description": "Esta etapa consolidara variables de decision, funcion objetivo y restricciones del sistema.",
-      "seed_paths": {},
-      "analysis_available": [],
+      "status": "active",
+      "summary": "Asignacion 2D de bahias con horizonte rodante y transferencia explicita desde ML hacia el costo del modelo.",
+      "description": "La tercera etapa formaliza el problema de asignacion de contenedores a bahias del yard, construye el parametro de urgencia u_c desde ML y lo traduce en la penalizacion economica P_c,b del modelo matematico.",
+      "seed_paths": {
+        "instance_file": "seed/Week3/Instancia_inicial_3.txt",
+        "history_file_1": "seed/Week2/Grupo1_5W_out.csv",
+        "history_file_2": "seed/Week2/Grupo2_5W_out.csv",
+        "history_file_3": "seed/Week2/Grupo3_5W_out.csv",
+        "history_file_4": "seed/Week2/Grupo4_5W_out.csv"
+      },
+      "analysis_available": [
+        "preview",
+        "optimization_model",
+        "notes",
+        "report"
+      ],
       "expected_inputs": [
-        "Variables relevantes identificadas en Semana 1 y Semana 2",
-        "Supuestos del sistema",
-        "Restricciones del problema"
+        "Instancia de yard con 77 bahias, distancias y capacidades",
+        "Historia Week2 para generar bandas de dwell time",
+        "Supuestos operacionales del flujo de contenedores"
       ],
       "checklist": [
-        "Definir variables de decision",
-        "Escribir funcion objetivo",
-        "Identificar restricciones duras y blandas"
+        "Definir conjuntos, parametros y variables de decision",
+        "Construir u_c desde ML y traducirlo a P_c,b",
+        "Formalizar objetivo y restricciones del modelo 2D"
       ],
       "deliverables": [
-        "Borrador del modelo matematico",
-        "Checklist de variables y restricciones",
-        "Reporte de preparacion"
+        "Modelo matematico base en Markdown/HTML",
+        "Payload JSON con parametros y ejemplos de P_c,b",
+        "Balance semanal y dataset canonico de contenedores puntuados"
       ],
       "artifact_templates": [
+        {
+          "kind": "dataset",
+          "label": "Dataset canonico de contenedores puntuados",
+          "relative_path": "workspace/week-3/canonical.csv"
+        },
+        {
+          "kind": "metadata",
+          "label": "Metadata del pipeline",
+          "relative_path": "workspace/week-3/metadata.json"
+        },
+        {
+          "kind": "optimization",
+          "label": "Modelo matematico y parametros",
+          "relative_path": "workspace/week-3/optimization_model.json"
+        },
+        {
+          "kind": "optimization",
+          "label": "Balance semanal",
+          "relative_path": "workspace/week-3/weekly_balance.csv"
+        },
+        {
+          "kind": "optimization",
+          "label": "Modelo CPLEX oficial (.mod)",
+          "relative_path": "workspace/week-3/official_model.mod"
+        },
+        {
+          "kind": "optimization",
+          "label": "Export CPLEX oficial (.dat)",
+          "relative_path": "workspace/week-3/official_model.dat"
+        },
+        {
+          "kind": "optimization",
+          "label": "Baseline de validacion (.mod)",
+          "relative_path": "workspace/week-3/baseline_validation.mod"
+        },
+        {
+          "kind": "optimization",
+          "label": "Baseline de validacion (.dat)",
+          "relative_path": "workspace/week-3/baseline_validation.dat"
+        },
+        {
+          "kind": "optimization",
+          "label": "Mapa de segregaciones CPLEX",
+          "relative_path": "workspace/week-3/cplex_segregations.csv"
+        },
+        {
+          "kind": "optimization",
+          "label": "Segregaciones base del primer .mod",
+          "relative_path": "workspace/week-3/baseline_segregations.csv"
+        },
+        {
+          "kind": "optimization",
+          "label": "Senales ML agregadas para CPLEX",
+          "relative_path": "workspace/week-3/cplex_ml_signals.csv"
+        },
+        {
+          "kind": "optimization",
+          "label": "Semilla de inventario inicial baseline",
+          "relative_path": "workspace/week-3/baseline_inventory_seed.csv"
+        },
         {
           "kind": "report_markdown",
           "label": "Reporte Markdown",
@@ -189,9 +260,9 @@
       "week_number": 4,
       "title": "Semana 4",
       "stage_name": "Restricciones y escenarios",
-      "status": "scaffolded",
-      "summary": "Preparacion de escenarios y reglas para evaluar factibilidad.",
-      "description": "Esta etapa deja listos los escenarios de simulacion y las restricciones que condicionan las soluciones futuras.",
+      "status": "active",
+      "summary": "Segunda version del modelo CPLEX avanzado, separada de week-3.",
+      "description": "Esta etapa implementa la segunda iteracion (v2) del modelo avanzado de asignacion de contenedores a bahias, heredando la formulacion de week-3 sin modificarla.",
       "seed_paths": {},
       "analysis_available": [],
       "expected_inputs": [
@@ -210,6 +281,31 @@
         "Checklist de consistencia"
       ],
       "artifact_templates": [
+        {
+          "kind": "prompt",
+          "label": "Prompt maestro modelo CPLEX v2",
+          "relative_path": "workspace/week-4/advanced_model_v2_prompt.md"
+        },
+        {
+          "kind": "optimization",
+          "label": "Modelo CPLEX v2 (.mod)",
+          "relative_path": "workspace/week-4/official_model_v2.mod"
+        },
+        {
+          "kind": "optimization",
+          "label": "Export CPLEX v2 (.dat)",
+          "relative_path": "workspace/week-4/official_model_v2.dat"
+        },
+        {
+          "kind": "optimization",
+          "label": "Mapa de segregaciones v2",
+          "relative_path": "workspace/week-4/cplex_v2_segregations.csv"
+        },
+        {
+          "kind": "optimization",
+          "label": "Senales ML v2",
+          "relative_path": "workspace/week-4/cplex_v2_ml_signals.csv"
+        },
         {
           "kind": "report_markdown",
           "label": "Reporte Markdown",

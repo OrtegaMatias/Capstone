@@ -8,7 +8,9 @@ import type {
   NotesResponse,
   NotesSaveResponse,
   PreviewResponse,
+  WeekArtifactTextResponse,
   WeekConfig,
+  WeekOptimizationPayload,
   WeekReportSummary,
 } from './types';
 
@@ -59,6 +61,11 @@ export async function fetchWeekMlCached(weekId: string): Promise<MlEvaluationSum
   return resp.status === 204 ? null : resp.data;
 }
 
+export async function fetchWeekOptimizationModel(weekId: string): Promise<WeekOptimizationPayload> {
+  const { data } = await api.get<WeekOptimizationPayload>(`/weeks/${weekId}/optimization-model`);
+  return data;
+}
+
 export function getApiBaseUrl(): string {
   return (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? defaultApiBase;
 }
@@ -83,3 +90,10 @@ export async function refreshWeekReport(weekId: string): Promise<WeekReportSumma
   return data;
 }
 
+export async function fetchWeekArtifactText(weekId: string, filename: string): Promise<WeekArtifactTextResponse> {
+  const { data } = await api.get<WeekArtifactTextResponse>(`/weeks/${weekId}/artifacts/text`, {
+    params: { filename },
+    timeout: 120000,
+  });
+  return data;
+}

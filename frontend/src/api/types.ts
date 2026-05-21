@@ -532,6 +532,264 @@ export type WeekReportSummary = {
   artifacts: WeekArtifact[];
 };
 
+export type WeekArtifactTextResponse = {
+  week_id: string;
+  filename: string;
+  content: string;
+};
+
+export type WeekOptimizationOwnerSelection = {
+  owner: string;
+  historical_rows: number;
+  train_rows: number;
+  test_rows: number;
+  candidate: boolean;
+  decision: string;
+  best_model?: string | null;
+  accuracy?: number | null;
+  adjacent_accuracy?: number | null;
+  band_mae?: number | null;
+  priority_corr?: number | null;
+  reason: string;
+};
+
+export type WeekOptimizationMlIntegration = {
+  bands: PriorityBand[];
+  global_best_model?: string | null;
+  global_accuracy?: number | null;
+  global_adjacent_accuracy?: number | null;
+  global_band_mae?: number | null;
+  global_priority_corr?: number | null;
+  urgency_rule: string;
+  alpha: number;
+  beta: number;
+  lambda_init: number;
+  lambda_tour: number;
+  lambda_dwell: number;
+  owner_rule: Record<string, number>;
+};
+
+export type WeekOptimizationWeeklyBalance = {
+  week: number;
+  start_units: number;
+  start_teu: number;
+  incoming_units: number;
+  incoming_teu: number;
+  active_units: number;
+  active_teu: number;
+  outgoing_units: number;
+  outgoing_teu: number;
+  end_units: number;
+  end_teu: number;
+  utilization_pct: number;
+};
+
+export type WeekOptimizationBaySummary = {
+  bay_id: number;
+  capacity_teu: number;
+  q_b: number;
+  distance_gate: number;
+  distance_out: number;
+  distance_lav: number;
+  distance_pti: number;
+  distance_mae: number;
+};
+
+export type WeekOptimizationPenaltyExample = {
+  bay_id: number;
+  q_b: number;
+  p_cb: number;
+  objective_cost: number;
+};
+
+export type WeekOptimizationContainerSample = {
+  container_id: string;
+  source: string;
+  week: number;
+  owner: string;
+  type: string;
+  size_teu: number;
+  category: string;
+  quality_group: string;
+  last_service: string;
+  model_scope: string;
+  selected_model: string;
+  band_prediction: string;
+  u_c: number;
+  probabilities: Record<string, number>;
+  penalty_examples: WeekOptimizationPenaltyExample[];
+};
+
+export type WeekOptimizationFormulation = {
+  sets: string[];
+  parameters: string[];
+  decision_variables: string[];
+  objective: string[];
+  constraints: string[];
+  assumptions: string[];
+};
+
+export type WeekOptimizationMathEntry = {
+  symbol_latex: string;
+  domain_latex?: string | null;
+  description: string;
+  notes?: string | null;
+};
+
+export type WeekOptimizationObjectiveComponent = {
+  term_latex: string;
+  description: string;
+  notes?: string | null;
+};
+
+export type WeekOptimizationObjective = {
+  equation_latex: string;
+  description: string;
+  components: WeekOptimizationObjectiveComponent[];
+};
+
+export type WeekOptimizationConstraint = {
+  name: string;
+  equation_latex: string;
+  description: string;
+  active_in_week3: boolean;
+  notes?: string | null;
+};
+
+export type WeekOptimizationAcademicFormulation = {
+  adopted_elements: string[];
+  dimensions: WeekOptimizationMathEntry[];
+  given_data: WeekOptimizationMathEntry[];
+  parameters: WeekOptimizationMathEntry[];
+  decision_variables: WeekOptimizationMathEntry[];
+  objective: WeekOptimizationObjective;
+  constraints: WeekOptimizationConstraint[];
+  assumptions: string[];
+  week4_extensions: WeekOptimizationConstraint[];
+};
+
+export type WeekOptimizationSegregationSample = {
+  segregation_id: string;
+  week: number;
+  type: string;
+  size_teu: number;
+  owner: string;
+  category_coarse: string;
+  container_count: number;
+  avg_u_jt: number;
+  dwell_mean_tj?: number | null;
+  alpha_l: number;
+  alpha_p: number;
+  alpha_m: number;
+};
+
+export type WeekOptimizationBridgeEquation = {
+  name: string;
+  equation_latex: string;
+  description: string;
+};
+
+export type WeekOptimizationNotationBridge = {
+  academic_unit: string;
+  operational_unit: string;
+  equations: WeekOptimizationBridgeEquation[];
+  aggregation_rules: string[];
+  cost_bridge: string[];
+  process_logic: string[];
+  compatibility_rule: string[];
+  segregation_samples: WeekOptimizationSegregationSample[];
+};
+
+export type WeekOptimizationCplexSamplePair = {
+  damaged_j: number;
+  operational_j: number;
+  type: string;
+  size_teu: number;
+  owner: string;
+};
+
+export type WeekOptimizationCplexExport = {
+  version: string;
+  j_count: number;
+  b_count: number;
+  t_count: number;
+  jd_count: number;
+  jo_count: number;
+  k_count: number;
+  owners: string[];
+  relaxed_process_capacity: number;
+  lambda_ml: number;
+  w_urg: number;
+  w_slow: number;
+  ml_signal_rule: string;
+  assumptions: string[];
+  sample_pairs: WeekOptimizationCplexSamplePair[];
+};
+
+export type WeekOptimizationBaselineSegregationSample = {
+  j: number;
+  base_code: string;
+  type: string;
+  size_teu: number;
+  owner: string;
+  dem_d: number;
+  dem_o: number;
+  out_s: number;
+  inv0_d: number;
+  inv0_o: number;
+};
+
+export type WeekOptimizationBaselineExport = {
+  version: string;
+  j_count: number;
+  b_count: number;
+  c_labels: string[];
+  validated_week: number;
+  owners: string[];
+  relaxed_workshop_capacity: number;
+  inspection_mapping: string;
+  initial_inventory_assumption: string;
+  initial_inventory_modeling_rule: string;
+  total_inv0_units: number;
+  total_inv0_teu: number;
+  total_inv0_d_units: number;
+  total_inv0_o_units: number;
+  assumptions: string[];
+  sample_segregations: WeekOptimizationBaselineSegregationSample[];
+};
+
+export type WeekOptimizationSummaryMetrics = {
+  bay_count: number;
+  planning_weeks: number;
+  compatibility_pairs: number;
+  total_capacity_teu: number;
+  total_scored_containers: number;
+  initial_stock_units: number;
+  initial_stock_teu: number;
+  peak_active_teu: number;
+  peak_active_units: number;
+  peak_utilization_pct: number;
+};
+
+export type WeekOptimizationPayload = {
+  week_id: string;
+  stage_name: string;
+  summary: WeekOptimizationSummaryMetrics;
+  ml_integration: WeekOptimizationMlIntegration;
+  owner_selections: WeekOptimizationOwnerSelection[];
+  weekly_balance: WeekOptimizationWeeklyBalance[];
+  top_bays: WeekOptimizationBaySummary[];
+  bottom_bays: WeekOptimizationBaySummary[];
+  container_samples: WeekOptimizationContainerSample[];
+  formulation: WeekOptimizationFormulation;
+  academic_formulation: WeekOptimizationAcademicFormulation;
+  notation_bridge: WeekOptimizationNotationBridge;
+  cplex_export: WeekOptimizationCplexExport;
+  baseline_export: WeekOptimizationBaselineExport;
+  warnings: WarningItem[];
+  artifacts: WeekArtifact[];
+};
+
 export type MlSplitSummary = {
   train_weeks: string[];
   test_weeks: string[];

@@ -63,6 +63,264 @@ class WeekReportSummary(BaseModel):
     artifacts: list[WeekArtifact]
 
 
+class WeekArtifactTextResponse(BaseModel):
+    week_id: str
+    filename: str
+    content: str
+
+
+class WeekOptimizationOwnerSelection(BaseModel):
+    owner: str
+    historical_rows: int
+    train_rows: int
+    test_rows: int
+    candidate: bool
+    decision: str
+    best_model: str | None = None
+    accuracy: float | None = None
+    adjacent_accuracy: float | None = None
+    band_mae: float | None = None
+    priority_corr: float | None = None
+    reason: str
+
+
+class WeekOptimizationMlIntegration(BaseModel):
+    bands: list[PriorityBand]
+    global_best_model: str | None = None
+    global_accuracy: float | None = None
+    global_adjacent_accuracy: float | None = None
+    global_band_mae: float | None = None
+    global_priority_corr: float | None = None
+    urgency_rule: str
+    alpha: float
+    beta: float
+    lambda_init: float
+    lambda_tour: float
+    lambda_dwell: float
+    owner_rule: dict[str, float | int]
+
+
+class WeekOptimizationWeeklyBalance(BaseModel):
+    week: int
+    start_units: int
+    start_teu: int
+    incoming_units: int
+    incoming_teu: int
+    active_units: int
+    active_teu: int
+    outgoing_units: int
+    outgoing_teu: int
+    end_units: int
+    end_teu: int
+    utilization_pct: float
+
+
+class WeekOptimizationBaySummary(BaseModel):
+    bay_id: int
+    capacity_teu: int
+    q_b: float
+    distance_gate: float
+    distance_out: float
+    distance_lav: float
+    distance_pti: float
+    distance_mae: float
+
+
+class WeekOptimizationPenaltyExample(BaseModel):
+    bay_id: int
+    q_b: float
+    p_cb: float
+    objective_cost: float
+
+
+class WeekOptimizationContainerSample(BaseModel):
+    container_id: str
+    source: str
+    week: int
+    owner: str
+    type: str
+    size_teu: int
+    category: str
+    quality_group: str
+    last_service: str
+    model_scope: str
+    selected_model: str
+    band_prediction: str
+    u_c: float
+    probabilities: dict[str, float]
+    penalty_examples: list[WeekOptimizationPenaltyExample]
+
+
+class WeekOptimizationFormulation(BaseModel):
+    sets: list[str]
+    parameters: list[str]
+    decision_variables: list[str]
+    objective: list[str]
+    constraints: list[str]
+    assumptions: list[str]
+
+
+class WeekOptimizationMathEntry(BaseModel):
+    symbol_latex: str
+    domain_latex: str | None = None
+    description: str
+    notes: str | None = None
+
+
+class WeekOptimizationObjectiveComponent(BaseModel):
+    term_latex: str
+    description: str
+    notes: str | None = None
+
+
+class WeekOptimizationObjective(BaseModel):
+    equation_latex: str
+    description: str
+    components: list[WeekOptimizationObjectiveComponent]
+
+
+class WeekOptimizationConstraint(BaseModel):
+    name: str
+    equation_latex: str
+    description: str
+    active_in_week3: bool
+    notes: str | None = None
+
+
+class WeekOptimizationAcademicFormulation(BaseModel):
+    adopted_elements: list[str]
+    dimensions: list[WeekOptimizationMathEntry]
+    given_data: list[WeekOptimizationMathEntry]
+    parameters: list[WeekOptimizationMathEntry]
+    decision_variables: list[WeekOptimizationMathEntry]
+    objective: WeekOptimizationObjective
+    constraints: list[WeekOptimizationConstraint]
+    assumptions: list[str]
+    week4_extensions: list[WeekOptimizationConstraint]
+
+
+class WeekOptimizationSegregationSample(BaseModel):
+    segregation_id: str
+    week: int
+    type: str
+    size_teu: int
+    owner: str
+    category_coarse: str
+    container_count: int
+    avg_u_jt: float
+    dwell_mean_tj: float | None = None
+    alpha_l: int
+    alpha_p: int
+    alpha_m: int
+
+
+class WeekOptimizationBridgeEquation(BaseModel):
+    name: str
+    equation_latex: str
+    description: str
+
+
+class WeekOptimizationNotationBridge(BaseModel):
+    academic_unit: str
+    operational_unit: str
+    equations: list[WeekOptimizationBridgeEquation]
+    aggregation_rules: list[str]
+    cost_bridge: list[str]
+    process_logic: list[str]
+    compatibility_rule: list[str]
+    segregation_samples: list[WeekOptimizationSegregationSample]
+
+
+class WeekOptimizationCplexSamplePair(BaseModel):
+    damaged_j: int
+    operational_j: int
+    type: str
+    size_teu: int
+    owner: str
+
+
+class WeekOptimizationCplexExport(BaseModel):
+    version: str
+    j_count: int
+    b_count: int
+    t_count: int
+    jd_count: int
+    jo_count: int
+    k_count: int
+    owners: list[str]
+    relaxed_process_capacity: int
+    lambda_ml: float
+    w_urg: float
+    w_slow: float
+    ml_signal_rule: str
+    assumptions: list[str]
+    sample_pairs: list[WeekOptimizationCplexSamplePair]
+
+
+class WeekOptimizationBaselineSegregationSample(BaseModel):
+    j: int
+    base_code: str
+    type: str
+    size_teu: int
+    owner: str
+    dem_d: int
+    dem_o: int
+    out_s: int
+    inv0_d: int
+    inv0_o: int
+
+
+class WeekOptimizationBaselineExport(BaseModel):
+    version: str
+    j_count: int
+    b_count: int
+    c_labels: list[str]
+    validated_week: int
+    owners: list[str]
+    relaxed_workshop_capacity: int
+    inspection_mapping: str
+    initial_inventory_assumption: str
+    initial_inventory_modeling_rule: str
+    total_inv0_units: int
+    total_inv0_teu: int
+    total_inv0_d_units: int
+    total_inv0_o_units: int
+    assumptions: list[str]
+    sample_segregations: list[WeekOptimizationBaselineSegregationSample]
+
+
+class WeekOptimizationSummaryMetrics(BaseModel):
+    bay_count: int
+    planning_weeks: int
+    compatibility_pairs: int
+    total_capacity_teu: int
+    total_scored_containers: int
+    initial_stock_units: int
+    initial_stock_teu: int
+    peak_active_teu: int
+    peak_active_units: int
+    peak_utilization_pct: float
+
+
+class WeekOptimizationPayload(BaseModel):
+    week_id: str
+    stage_name: str
+    summary: WeekOptimizationSummaryMetrics
+    ml_integration: WeekOptimizationMlIntegration
+    owner_selections: list[WeekOptimizationOwnerSelection]
+    weekly_balance: list[WeekOptimizationWeeklyBalance]
+    top_bays: list[WeekOptimizationBaySummary]
+    bottom_bays: list[WeekOptimizationBaySummary]
+    container_samples: list[WeekOptimizationContainerSample]
+    formulation: WeekOptimizationFormulation
+    academic_formulation: WeekOptimizationAcademicFormulation
+    notation_bridge: WeekOptimizationNotationBridge
+    cplex_export: WeekOptimizationCplexExport
+    baseline_export: WeekOptimizationBaselineExport
+    warnings: list[WarningItem]
+    artifacts: list[WeekArtifact] = []
+
+
 class MlSplitSummary(BaseModel):
     train_weeks: list[str]
     test_weeks: list[str]

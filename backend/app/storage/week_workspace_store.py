@@ -52,6 +52,9 @@ class WeekWorkspaceStore:
     def report_html_path(self, week_id: str) -> Path:
         return self.week_dir(week_id) / "report.html"
 
+    def artifact_path(self, week_id: str, filename: str) -> Path:
+        return self.week_dir(week_id) / filename
+
     def save_dataset(
         self,
         week_id: str,
@@ -149,3 +152,22 @@ class WeekWorkspaceStore:
         md_path.write_text(markdown_content, encoding="utf-8")
         html_path.write_text(html_content, encoding="utf-8")
         return datetime.fromtimestamp(md_path.stat().st_mtime, tz=timezone.utc).isoformat()
+
+    def write_json_artifact(self, week_id: str, filename: str, payload: dict[str, Any]) -> None:
+        self.ensure_week_dir(week_id)
+        self.artifact_path(week_id, filename).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def read_json_artifact(self, week_id: str, filename: str) -> dict[str, Any]:
+        path = self.artifact_path(week_id, filename)
+        if not path.exists():
+            raise FileNotFoundError(f"JSON artifact '{filename}' for week {week_id} not found")
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def read_text_artifact(self, week_id: str, filename: str) -> str:
+        path = self.artifact_path(week_id, filename)
+        if not path.exists():
+            raise FileNotFoundError(f"Text artifact '{filename}' for week {week_id} not found")
+        return path.read_text(encoding="utf-8", errors="replace")

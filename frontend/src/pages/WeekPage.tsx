@@ -3,11 +3,13 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import {
+  fetchWeekArtifactText,
   fetchWeekConfig,
   fetchWeekClustering,
   fetchWeekEDA,
   fetchWeekMlCached,
   fetchWeekNotes,
+  fetchWeekOptimizationModel,
   fetchWeekPreview,
   fetchWeekReport,
   getApiBaseUrl,
@@ -24,6 +26,7 @@ import MlClassificationPanel from '../components/MlClassificationPanel';
 import MlOverviewPanel from '../components/MlOverviewPanel';
 import MultipleRegressionPanel from '../components/MultipleRegressionPanel';
 import NotesPanel from '../components/NotesPanel';
+import OptimizationModelPanel from '../components/OptimizationModelPanel';
 import ReportPanel from '../components/ReportPanel';
 import Week1AcademicEdaPanel from '../components/Week1AcademicEdaPanel';
 import WarningChips from '../components/WarningChips';
@@ -32,6 +35,7 @@ import { downloadPageAsPdf } from '../utils/pdfExport';
 export default function WeekPage() {
   const { weekId } = useParams();
   const isWeek1 = weekId === 'week-1';
+  const isWeek4 = weekId === 'week-4';
   const pageRef = useRef<HTMLElement>(null);
   const [pdfStatus, setPdfStatus] = useState<string | null>(null);
   const [mlData, setMlData] = useState<MlEvaluationSummary | null>(null);
@@ -62,6 +66,24 @@ export default function WeekPage() {
     enabled: !!weekId,
   });
 
+  const inheritedWeek3Query = useQuery({
+    queryKey: ['week-config', 'week-3', 'inherited-for-week-4'],
+    queryFn: () => fetchWeekConfig('week-3'),
+    enabled: isWeek4,
+  });
+
+  const inheritedModelCodeQuery = useQuery({
+    queryKey: ['week-4-inherited-cplex-code'],
+    queryFn: async () => {
+      const [mod, dat] = await Promise.all([
+        fetchWeekArtifactText('week-3', 'official_model.mod'),
+        fetchWeekArtifactText('week-3', 'official_model.dat'),
+      ]);
+      return { mod, dat };
+    },
+    enabled: isWeek4,
+  });
+
   const previewQuery = useQuery({
     queryKey: ['week-preview', weekId],
     queryFn: () => fetchWeekPreview(weekId as string, 20),
@@ -78,6 +100,12 @@ export default function WeekPage() {
     queryKey: ['week-ml-cached', weekId],
     queryFn: () => fetchWeekMlCached(weekId as string),
     enabled: !!weekId && !!weekQuery.data?.analysis_available.includes('ml_overview'),
+  });
+
+  const optimizationQuery = useQuery({
+    queryKey: ['week-optimization', weekId],
+    queryFn: () => fetchWeekOptimizationModel(weekId as string),
+    enabled: !!weekId && !!weekQuery.data?.analysis_available.includes('optimization_model'),
   });
 
   useEffect(() => {
@@ -189,6 +217,9 @@ export default function WeekPage() {
   });
 
   const week = weekQuery.data;
+  const inheritedModelArtifacts = (inheritedWeek3Query.data?.artifacts ?? []).filter(
+    (artifact) => artifact.path.includes('official_model.mod') || artifact.path.includes('official_model.dat')
+  );
 
 
 
@@ -267,7 +298,86 @@ export default function WeekPage() {
         </div>
       </section>
 
-      <ArtifactList artifacts={week.artifacts} />
+      <ArtifactList artifacts={week.artifacts} weekId={week.week_id} />
+
+      {isWeek4 ? (
+        inheritedWeek3Query.isLoading ? (
+          <section className="panel">
+            <div className="section-header">
+              <h3>Modelo Base Heredado</h3>
+              <p className="muted">Cargando el `.mod` y el `.dat` definidos en la semana 3.</p>
+            </div>
+          </section>
+        ) : inheritedWeek3Query.isError ? (
+          <section className="panel">
+            <div className="section-header">
+              <h3>Modelo Base Heredado</h3>
+              <p className="error">No se pudo cargar la referencia al modelo CPLEX de la semana 3.</p>
+            </div>
+          </section>
+        ) : inheritedModelArtifacts.length > 0 ? (
+          <section className="panel">
+            <div className="section-header">
+              <h3>Modelo Base Heredado</h3>
+              <p className="muted">
+                La semana 4 toma como base el modelo oficial ya generado en la semana 3. Aqui se muestran el
+                archivo `.mod` y su `.dat` asociado.
+              </p>
+            </div>
+            <div className="artifact-list">
+              {inheritedModelArtifacts.map((artifact) => (
+                <article key={`${artifact.kind}-${artifact.path}`} className="artifact-card">
+                  <div>
+                    <strong>{artifact.label}</strong>
+                    <p className="muted">{artifact.path}</p>
+                  </div>
+                  <span className={`status-pill ${artifact.available ? 'ready' : 'pending'}`}>
+                    {artifact.available ? 'Disponible' : 'Pendiente'}
+                  </span>
+                </article>
+              ))}
+            </div>
+            {inheritedModelCodeQuery.isLoading ? (
+              <div className="grid-2" style={{ marginTop: '1rem' }}>
+                <section className="panel">
+                  <h4 style={{ marginBottom: '0.75rem' }}>official_model.mod</h4>
+                  <p className="muted">Cargando contenido del modelo...</p>
+                </section>
+                <section className="panel">
+                  <h4 style={{ marginBottom: '0.75rem' }}>official_model.dat</h4>
+                  <p className="muted">Cargando datos del modelo...</p>
+                </section>
+              </div>
+            ) : inheritedModelCodeQuery.isError ? (
+              <div className="panel" style={{ marginTop: '1rem' }}>
+                <p className="error">No se pudo cargar el contenido del `.mod` y `.dat` heredados.</p>
+              </div>
+            ) : inheritedModelCodeQuery.data ? (
+              <div className="grid-2" style={{ marginTop: '1rem' }}>
+                <section className="panel">
+                  <h4 style={{ marginBottom: '0.75rem' }}>{inheritedModelCodeQuery.data.mod.filename}</h4>
+                  <pre className="code-block" style={{ maxHeight: '30rem', margin: 0 }}>
+                    {inheritedModelCodeQuery.data.mod.content}
+                  </pre>
+                </section>
+                <section className="panel">
+                  <h4 style={{ marginBottom: '0.75rem' }}>{inheritedModelCodeQuery.data.dat.filename}</h4>
+                  <pre className="code-block" style={{ maxHeight: '30rem', margin: 0 }}>
+                    {inheritedModelCodeQuery.data.dat.content}
+                  </pre>
+                </section>
+              </div>
+            ) : null}
+          </section>
+        ) : (
+          <section className="panel">
+            <div className="section-header">
+              <h3>Modelo Base Heredado</h3>
+              <p className="muted">La semana 3 no expone todavia el `.mod` y el `.dat` para heredarlos en semana 4.</p>
+            </div>
+          </section>
+        )
+      ) : null}
 
       {isWeek1 ? (
         edaQuery.isLoading ? (
@@ -370,6 +480,22 @@ export default function WeekPage() {
         )
       ) : null}
 
+      {week.analysis_available.includes('optimization_model') ? (
+        optimizationQuery.isLoading ? (
+          <section className="panel">
+            <h3>Modelo de optimización</h3>
+            <p className="muted">Construyendo la formulación y los parámetros de semana 3...</p>
+          </section>
+        ) : optimizationQuery.isError ? (
+          <section className="panel">
+            <h3>Modelo de optimización</h3>
+            <p className="error">No se pudo cargar el modelo de optimización de la semana 3.</p>
+          </section>
+        ) : optimizationQuery.data ? (
+          <OptimizationModelPanel payload={optimizationQuery.data} />
+        ) : null
+      ) : null}
+
       {week.status === 'scaffolded' ? (
         <section className="panel">
           <h3>Base guiada</h3>
@@ -414,7 +540,7 @@ export default function WeekPage() {
         </div>
       )}
 
-      {(weekQuery.isError || previewQuery.isError || edaQuery.isError || clusteringQuery.isError || mlCachedQuery.isError || notesQuery.isError || reportQuery.isError) ? (
+      {(weekQuery.isError || previewQuery.isError || edaQuery.isError || clusteringQuery.isError || mlCachedQuery.isError || optimizationQuery.isError || notesQuery.isError || reportQuery.isError) ? (
         <p className="error">Hubo un error cargando la semana. Revisa backend, manifest y seeds.</p>
       ) : null}
     </main>
